@@ -34,7 +34,7 @@ private:
     VersionManager version_manager;
     Logger &logger = Logger::get_logger();
     NodeManager &node_manager = NodeManager::get_node_manager();
-    int CURRENT_VERSION;
+    unsigned long long CURRENT_VERSION = 0;
 
     /**
      * @brief 
@@ -201,7 +201,7 @@ public:
      * If the version does not exist or version_manager returns an error, then False will be 
      * returned here. Please check the information of logger for specific reasons.
      */
-    bool switch_version(int version_id);
+    bool switch_version(unsigned long long version_id);
 
     /**
      * @brief 
@@ -701,7 +701,7 @@ bool FileSystem::travel_find(std::string name, std::vector<std::pair<std::string
     return true;
 }
 
-bool FileSystem::switch_version(int version_id) {
+bool FileSystem::switch_version(unsigned long long version_id) {
     if (!version_manager.version_exist(version_id)) {
         logger.log("This version is not in the system.");
         return false;
