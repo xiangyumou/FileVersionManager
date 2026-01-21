@@ -579,8 +579,7 @@ bool FileSystem::decrease_counter(treeNode *p) {
 
 bool FileSystem::recursive_delete_nodes(treeNode *p, bool delete_brother) {
     if (p == nullptr) {
-        logger.log("Get a null pointer in line " + std::to_string(__LINE__));
-        return false;
+        return true;
     }
     recursive_delete_nodes(p->first_son, true);
     if (delete_brother) recursive_delete_nodes(p->next_brother, true);
