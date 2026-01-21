@@ -113,7 +113,7 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
    switch (pid) {
       case 0: 
       if (!add_identifier(parameter[0], Saver::str_to_ull(parameter[1]))) return false;
-      else std::cout << "An identifier was successfully added for program " + Saver::str_to_ull(parameter[1]) <<  + "." << '\n';
+      else std::cout << "An identifier was successfully added for program " << Saver::str_to_ull(parameter[1]) << "." << '\n';
       break;
       case 1:
       if (!delete_identifier(parameter[0])) return false;

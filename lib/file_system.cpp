@@ -127,7 +127,7 @@ private:
      * But don't worry, if the user does not call the function, it will return an error. This 
      * is normal, because this function will inevitably recurse to the boundary of the tree.
      */
-    bool travel_tree(treeNode *p, std::string &tree_info);
+    bool travel_tree(treeNode *p, std::string &tree_info, int tab_cnt);
 
     /**
      * @brief 
@@ -166,6 +166,24 @@ private:
 
 public:
     FileSystem();
+
+    /**
+     * @brief
+     * Display the file tree structure.
+     *
+     * @param p
+     * The root node of the tree to be traversed.
+     *
+     * @param tree_info
+     * Reference to a string that will store the traversal result.
+     *
+     * @return true
+     * The subtree is successfully traversed.
+     *
+     * @return false
+     * A null pointer was encountered.
+     */
+    bool travel_tree(treeNode *p, std::string &tree_info);
 
     /**
      * @brief 
@@ -605,14 +623,13 @@ bool FileSystem::rebuild_nodes(treeNode *p) {
     return true;
 }
 
-bool FileSystem::travel_tree(treeNode *p,std::string &tree_info) {
+bool FileSystem::travel_tree(treeNode *p, std::string &tree_info, int tab_cnt) {
     if (p == nullptr) {
         logger.log("Get a null pointer in line " + std::to_string(__LINE__));
         return false;
     }
-    static int tab_cnt = 1;
     if (p->type == 2) {
-        travel_tree(p->next_brother, tree_info);
+        travel_tree(p->next_brother, tree_info, tab_cnt);
         return true;
     }
     for (unsigned int i = 0; i < tab_cnt; i++) {
@@ -626,10 +643,15 @@ bool FileSystem::travel_tree(treeNode *p,std::string &tree_info) {
     }
     tree_info += node_manager.get_name(p->link) + '\n';
     tab_cnt++;
-    travel_tree(p->first_son, tree_info);
+    travel_tree(p->first_son, tree_info, tab_cnt);
     tab_cnt--;
-    travel_tree(p->next_brother, tree_info);
+    travel_tree(p->next_brother, tree_info, tab_cnt);
     return true;
+}
+
+// Public wrapper function
+bool FileSystem::travel_tree(treeNode *p, std::string &tree_info) {
+    return travel_tree(p, tree_info, 1);
 }
 
 bool FileSystem::kmp(std::string str, std::string tar) {
@@ -793,7 +815,7 @@ bool FileSystem::update_name(std::string fr_name, std::string to_name) {
 }
 
 bool FileSystem::update_content(std::string name, std::string content) {
-    if (!go_to(name)) false;
+    if (!go_to(name)) return false;
     if (!check_path()) return false;
     if (path.back()->type != 0) {
         logger.log(name + ": Not a file.");
