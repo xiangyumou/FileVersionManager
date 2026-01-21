@@ -237,7 +237,10 @@ bool VersionManager::save() {
 }
 
 VersionManager::VersionManager() {
-    if (!load()) return;
+    if (!load()) {
+        logger.log("Failed to load existing version data. Creating new version.", Logger::WARNING, __LINE__);
+        create_version();
+    }
 }
 
 VersionManager::~VersionManager() {
