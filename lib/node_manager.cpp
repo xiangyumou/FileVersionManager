@@ -14,6 +14,7 @@
 #include "file_manager.cpp"
 #include "saver.cpp"
 #include <cmath>
+#include <ctime>
 #include <cstring>
 #include <cstdlib>
 #include <string>
@@ -167,6 +168,7 @@ bool NodeManager::load() {
 }
 
 NodeManager::NodeManager() {
+    srand(time(NULL));
     if (!load()) return;
 }
 
