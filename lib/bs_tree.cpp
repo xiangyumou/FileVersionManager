@@ -342,16 +342,19 @@ bool BSTree::list_directory_contents(std::vector<std::string> &content) {
 
 bool BSTree::get_current_path(std::vector<std::string> &p) {
     auto path_backup = path;
-    if (!goto_head()) return false;
+    if (!goto_head()) goto restore;
     while (path.size() > 2) {
         p.push_back(node_manager.get_name(path[path.size() - 2]->link));
-        if (!goto_last_dir()) return false;
-        if (!goto_head()) return false;
+        if (!goto_last_dir()) goto restore;
+        if (!goto_head()) goto restore;
     }
     p.push_back(node_manager.get_name(path.front()->link));
     path = path_backup;
     std::reverse(p.begin(), p.end());
     return true;
+restore:
+    path = path_backup;
+    return false;
 }
 
 #endif
