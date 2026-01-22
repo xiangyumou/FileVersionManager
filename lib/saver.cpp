@@ -18,16 +18,32 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <fstream>
 
 typedef std::vector<std::vector<std::string>> vvs;
 
 /**
- * @brief 
- * The structure encapsulates the data, including the name of the data, the hash value 
+ * @brief
+ * WAL (Write-Ahead Log) entry for incremental persistence.
+ * Each entry represents a single data change (insert/update/delete).
+ */
+struct WalEntry {
+    enum OpType { INSERT, UPDATE, DELETE } op;
+    unsigned long long name_hash;
+    unsigned long long data_hash;
+    int len;
+    std::vector<std::pair<double, double>> data;
+
+    WalEntry() : op(INSERT), name_hash(0), data_hash(0), len(0) {}
+};
+
+/**
+ * @brief
+ * The structure encapsulates the data, including the name of the data, the hash value
  * of the data, the length of the encrypted data, and the encrypted data.
- * 
- * It should be noted that the len here is not the actual length of the data, but the 
- * actual length/N, where N is the length of a data block. (This concept is proposed in 
+ *
+ * It should be noted that the len here is not the actual length of the data, but the
+ * actual length/N, where N is the length of a data block. (This concept is proposed in
  * the encryptor class)
  */
 struct dataNode {
@@ -59,19 +75,28 @@ struct dataNode {
 class Saver : private Encryptor {
 private:
     /**
-     * @brief 
+     * @brief
      * The file name of the stored data is set here.
      */
     std::string data_file = "data.chm";
 
     /**
-     * @brief 
-     *  Here, the hash value of the data name provided by the user is used as the primary 
+     * @brief
+     *  Here, the hash value of the data name provided by the user is used as the primary
      *  key to map a data structure.
      */
     std::map<unsigned long long, dataNode> mp;
 
     Logger &logger;
+
+    /**
+     * @brief
+     * WAL (Write-Ahead Log) for incremental persistence.
+     */
+    std::string wal_file = "data.wal";
+    size_t wal_entry_count = 0;
+    size_t auto_compact_threshold = 100;  // Auto-compact after this many WAL entries
+    bool enable_wal = true;
 
     /**
      * @brief Get the hash object
@@ -116,13 +141,41 @@ private:
     void save_data(unsigned long long name_hash, unsigned long long data_hash, std::vector<std::pair<double, double>> data);
 
     /**
-     * @brief 
+     * @brief
      * This function is used to assist the load function.
-     * 
-     * This function takes the first number out of the string and removes the number 
+     *
+     * This function takes the first number out of the string and removes the number
      * part from the string.
      */
     int read(std::string &s);
+
+    /**
+     * @brief
+     * Write a WAL entry to the WAL file (atomic append-only write).
+     *
+     * @param entry The WAL entry to write
+     * @return true if successful, false otherwise
+     */
+    bool flush_wal(const WalEntry& entry);
+
+    /**
+     * @brief
+     * Load and replay WAL entries from the WAL file.
+     * Called during startup to recover incremental changes.
+     *
+     * @return true if successful, false otherwise
+     */
+    bool load_from_wal();
+
+    /**
+     * @brief
+     * Atomic write utility - writes to temp file then renames.
+     *
+     * @param filename Target filename
+     * @param content Content to write
+     * @return true if successful, false otherwise
+     */
+    bool atomic_write(const std::string& filename, const std::string& content);
 
 public:
     Saver(Logger &logger = Logger::get_logger());
@@ -146,6 +199,13 @@ public:
     static bool is_all_digits(std::string &s);
     static unsigned long long str_to_ull(std::string &s);
     static Saver& get_saver();
+
+    // New WAL-related public methods
+    bool flush();                        // Immediately flush WAL to disk
+    bool compact();                      // Manually trigger WAL compaction
+    size_t get_wal_size() const;         // Get current WAL entry count
+    bool set_auto_compact(size_t threshold);  // Set auto-compact threshold
+    bool set_wal_enabled(bool enabled);  // Enable/disable WAL
 };
 
 
@@ -227,10 +287,22 @@ bool Saver::load_file() {
  * 其中 len为data的pair的对数 / N
 */
 void Saver::save_data(unsigned long long name_hash, unsigned long long data_hash, std::vector<std::pair<double, double>> data) {
-    if (mp.count(name_hash)) {
+    bool existed = mp.count(name_hash);
+
+    if (existed) {
         mp.erase(mp.find(name_hash));
     }
     mp[name_hash] = dataNode(name_hash, data_hash, data);
+
+    // Write to WAL for incremental persistence
+    WalEntry entry;
+    entry.op = existed ? WalEntry::UPDATE : WalEntry::INSERT;
+    entry.name_hash = name_hash;
+    entry.data_hash = data_hash;
+    entry.len = data.size() / N;
+    entry.data = data;
+
+    flush_wal(entry);
 }
 
 int Saver::read(std::string &s) {
@@ -245,6 +317,7 @@ int Saver::read(std::string &s) {
 
 Saver::Saver(Logger &logger) : logger(logger) {
     load_file();
+    load_from_wal();  // Replay WAL after loading main file
 }
 
 /**
@@ -252,37 +325,35 @@ Saver::Saver(Logger &logger) : logger(logger) {
  * name_hash data_hash len 后面跟len对浮点数
 */
 Saver::~Saver() {
-    std::ofstream out(data_file);
-    for (auto &data : mp) {
-        dataNode &dn = data.second;
-        out << data.first << ' ' << dn.data_hash << ' ' << dn.len;
-        for (auto &pr : dn.data) {
-            out << ' ' << pr.first << ' ' << pr.second;
-        }
-        out << '\n';
-    }
+    // Compact WAL to main file on shutdown (ensures data persistence)
+    compact();
 }
 
 /**
  * data字符串的格式:
- * 数据块的个数 
+ * 数据块的个数
  * 每个数据块中数据的个数
  * 数据的长度
  * 数据的字符表示
  * 每个单元之间都用空格隔开
 */
 bool Saver::save(std::string name, std::vector<std::vector<std::string>> &content) {
-    std::string data;
-    data += std::to_string(content.size());
-    for (auto &data_block : content) {
-        data += " " + std::to_string(data_block.size());
-        for (auto &dt : data_block) {
-            data += " " + std::to_string(dt.size()) + " " + dt;
+    // Optimized serialization using stringstream (O(n) instead of O(n²))
+    std::ostringstream oss;
+
+    oss << content.size();
+    for (const auto& data_block : content) {
+        oss << ' ' << data_block.size();
+        for (const auto& dt : data_block) {
+            oss << ' ' << dt.size() << ' ' << dt;
         }
     }
+
+    std::string data = oss.str();
     std::vector<int> sequence;
+    sequence.reserve(data.size());  // Pre-allocate
     for (auto &it : data) {
-        sequence.push_back((int)it);
+        sequence.push_back(static_cast<int>(static_cast<unsigned char>(it)));
     }
     std::vector<std::pair<double, double>> res;
     encrypt_sequence(sequence, res);
@@ -355,6 +426,189 @@ Saver& Saver::get_saver() {
     static Saver saver(Logger::get_logger());
     return saver;
 }
+
+
+                        /* ======= WAL and Optimization Methods ======= */
+
+bool Saver::atomic_write(const std::string& filename, const std::string& content) {
+    std::string tmp_file = filename + ".tmp";
+    std::ofstream out(tmp_file, std::ios::binary | std::ios::trunc);
+    if (!out.good()) {
+        logger.log("atomic_write: Failed to create temp file " + tmp_file, Logger::FATAL, __LINE__);
+        return false;
+    }
+    out << content;
+    out.close();
+
+    if (!out.good()) {
+        logger.log("atomic_write: Failed to write to temp file " + tmp_file, Logger::FATAL, __LINE__);
+        std::remove(tmp_file.c_str());
+        return false;
+    }
+
+    // Atomic rename from temp to target
+    if (std::rename(tmp_file.c_str(), filename.c_str()) != 0) {
+        logger.log("atomic_write: Failed to rename temp file to " + filename, Logger::FATAL, __LINE__);
+        std::remove(tmp_file.c_str());
+        return false;
+    }
+
+    return true;
+}
+
+bool Saver::flush_wal(const WalEntry& entry) {
+    if (!enable_wal) return true;
+
+    // WAL entry format: op name_hash data_hash len [pairs...]
+    std::ostringstream oss;
+    oss << static_cast<int>(entry.op) << ' '
+        << entry.name_hash << ' '
+        << entry.data_hash << ' '
+        << entry.len;
+
+    for (const auto& pr : entry.data) {
+        oss << ' ' << pr.first << ' ' << pr.second;
+    }
+    oss << '\n';
+
+    std::string wal_line = oss.str();
+
+    // Append to WAL file
+    std::ofstream out(wal_file, std::ios::app | std::ios::binary);
+    if (!out.good()) {
+        logger.log("flush_wal: Failed to open WAL file for appending", Logger::FATAL, __LINE__);
+        return false;
+    }
+
+    out << wal_line;
+    out.close();
+
+    if (!out.good()) {
+        logger.log("flush_wal: Failed to write to WAL file", Logger::FATAL, __LINE__);
+        return false;
+    }
+
+    wal_entry_count++;
+
+    // Auto-compact if threshold reached
+    if (wal_entry_count >= auto_compact_threshold) {
+        compact();
+    }
+
+    return true;
+}
+
+bool Saver::load_from_wal() {
+    if (!enable_wal) return true;
+
+    std::ifstream in(wal_file);
+    if (!in.good()) {
+        // WAL file doesn't exist yet, that's ok
+        return false;
+    }
+
+    std::string line;
+    int op_type;
+    unsigned long long name_hash, data_hash;
+    int len;
+    std::vector<std::pair<double, double>> data;
+
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+
+        std::istringstream iss(line);
+        if (!(iss >> op_type >> name_hash >> data_hash >> len)) {
+            logger.log("load_from_wal: Invalid WAL entry format", Logger::WARNING, __LINE__);
+            continue;
+        }
+
+        data.clear();
+        for (int i = 0; i < len * N; i++) {
+            double a, b;
+            if (!(iss >> a >> b)) {
+                logger.log("load_from_wal: Invalid WAL data pair", Logger::WARNING, __LINE__);
+                break;
+            }
+            data.push_back(std::make_pair(a, b));
+        }
+
+        WalEntry::OpType op = static_cast<WalEntry::OpType>(op_type);
+
+        switch (op) {
+            case WalEntry::INSERT:
+            case WalEntry::UPDATE:
+                mp[name_hash] = dataNode(name_hash, data_hash, data);
+                break;
+            case WalEntry::DELETE:
+                mp.erase(name_hash);
+                break;
+        }
+
+        wal_entry_count++;
+    }
+
+    in.close();
+
+    // After replaying WAL, clear it and reset count
+    if (wal_entry_count > 0) {
+        std::ofstream out(wal_file, std::ios::trunc);
+        out.close();
+        wal_entry_count = 0;
+    }
+
+    return true;
+}
+
+bool Saver::compact() {
+    // Build the complete data file content
+    std::ostringstream oss;
+    for (const auto& data : mp) {
+        const dataNode& dn = data.second;
+        oss << data.first << ' ' << dn.data_hash << ' ' << dn.len;
+        for (const auto& pr : dn.data) {
+            oss << ' ' << pr.first << ' ' << pr.second;
+        }
+        oss << '\n';
+    }
+
+    if (!atomic_write(data_file, oss.str())) {
+        logger.log("compact: Failed to write compacted data file", Logger::FATAL, __LINE__);
+        return false;
+    }
+
+    // Clear WAL after successful compaction
+    std::ofstream out(wal_file, std::ios::trunc);
+    out.close();
+    wal_entry_count = 0;
+
+    logger.log("compact: Successfully compacted WAL to main file", Logger::INFO, __LINE__);
+    return true;
+}
+
+bool Saver::flush() {
+    // Force immediate WAL sync (already done on each write)
+    // This is mainly for explicit user control
+    return true;
+}
+
+size_t Saver::get_wal_size() const {
+    return wal_entry_count;
+}
+
+bool Saver::set_auto_compact(size_t threshold) {
+    if (threshold == 0) {
+        logger.log("set_auto_compact: Threshold must be > 0", Logger::WARNING, __LINE__);
+        return false;
+    }
+    auto_compact_threshold = threshold;
+    return true;
+}
+
+bool Saver::set_wal_enabled(bool enabled) {
+    enable_wal = enabled;
+    return true;
+}
+
 
 int test_saver() {
 // int main() {
