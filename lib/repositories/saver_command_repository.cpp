@@ -18,7 +18,7 @@ public:
         : saver_(saver), logger_(logger) {}
 
     bool save(const std::map<unsigned long long, unsigned long long>& data) override {
-        vvs vvs_data;
+        interfaces::vvs vvs_data;
         for (const auto& it : data) {
             vvs_data.push_back({std::to_string(it.first), std::to_string(it.second)});
         }
@@ -26,7 +26,7 @@ public:
     }
 
     bool load(std::map<unsigned long long, unsigned long long>& data) override {
-        vvs vvs_data;
+        interfaces::vvs vvs_data;
         if (!saver_.load("CommandInterpreter::map_relation", vvs_data)) return false;
 
         data.clear();
