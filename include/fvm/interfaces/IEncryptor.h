@@ -20,11 +20,11 @@ public:
      * @brief
      * Encrypt a sequence of integers using FFT-based encryption.
      *
-     * @param sequence The sequence of integers to encrypt
+     * @param sequence The sequence of integers to encrypt (not modified)
      * @param res The encrypted sequence (pairs of doubles representing complex numbers)
      * @return true if encryption succeeded, false otherwise
      */
-    virtual bool encrypt_sequence(std::vector<int> &sequence, std::vector<std::pair<double, double>> &res) = 0;
+    virtual bool encrypt_sequence(const std::vector<int> &sequence, std::vector<std::pair<double, double>> &res) = 0;
 
     /**
      * @brief

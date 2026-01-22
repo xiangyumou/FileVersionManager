@@ -10,7 +10,8 @@ TEST_OBJECTS = $(TEST_SOURCES:.cpp=.o)
 # Only compile standalone sources that don't include other .cpp files
 MAIN_OBJECTS = \
 	../lib/random.o \
-	../lib/system_clock.o
+	../lib/system_clock.o \
+	../lib/encryptor.o
 
 # Compiler flags
 CXXFLAGS = -std=c++17 -I../include -I. -I$(GTEST_DIR) -g -Wall

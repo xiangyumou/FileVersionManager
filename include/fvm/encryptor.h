@@ -42,7 +42,7 @@ public:
     static const int N = 1 << 10;
 
     // Implement IEncryptor interface
-    bool encrypt_sequence(std::vector<int> &sequence, std::vector<std::pair<double, double>> &res) override;
+    bool encrypt_sequence(const std::vector<int> &sequence, std::vector<std::pair<double, double>> &res) override;
     bool decrypt_sequence(std::vector<std::pair<double, double>> &sequence, std::vector<int> &res) override;
     int get_block_size() const override { return N; }
 
@@ -54,20 +54,18 @@ private:
      * For example, if there is an integer sequence that is only 1000 bits long, but
      * the FFT requires 1024 bits, 24 PLACEHOLEDER is added after this integer sequence.
      */
-    static const char PLACEHOLDER = '\0';
+    static const int PLACEHOLDER = 0;
 
     /**
      * @brief
      * The buf array is used as a buffer for the FFT function.
-     * Here you can use the butterfly transform to optimize this array, but the level
-     * is limited, I will not. QAQ
      *
      * This block array is suitable for storing the data you want to encrypt.
      * An encryption sequence may be very long, but here it will be split into small
      * data blocks, each of which has a length of N, and then this data block is spliced
      * together to form the encrypted sequence.
      */
-    Complex buf[N << 1], block[N];
+    Complex buf[N], block[N];
 
     /**
      * @brief

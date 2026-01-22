@@ -15,6 +15,14 @@
 #include <cstring>
 #include <cmath>
 #include <vector>
+#include <algorithm>
+
+// Constants
+constexpr double PI = 3.14159265358979323846;
+constexpr double ROUNDING_THRESHOLD = 1e-2;
+
+// Static member definitions
+const int Encryptor::PLACEHOLDER;
 
 
                         /* ======= struct Complex ======= */
@@ -32,25 +40,43 @@ Complex Complex::operator*(const Complex &r) const {
 
                         /* ======= class Encryptor ======= */
 void Encryptor::fft(Complex a[], int n, int type) {
-    const static double Pi = acos(-1.0);
-    if (n == 1) return;
-    int m = n >> 1;
-    for (int i = 0; i < m; i++) {
-        buf[i] = a[i << 1];
-        buf[i + m] = a[i << 1 | 1];
+    // Bit-reversal permutation
+    int j = 0;
+    for (int i = 1; i < n; ++i) {
+        int bit = n >> 1;
+        while (j & bit) {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j ^= bit;
+        if (i < j) {
+            std::swap(a[i], a[j]);
+        }
     }
-    memcpy(a, buf, sizeof(Complex) * n);
-    Complex *a1 = a, *a2 = a + m;
-    fft(a, m, type);
-    fft(a + m, m, type);
-    Complex wn = Complex(1, 0), u = Complex(cos(2 * Pi / n), type * sin(2 *Pi / n));
-    for (int i = 0; i < m; i++) {
-        Complex t = wn * a[m + i];
-        wn = wn * u;
-        buf[i] = a[i] + t;
-        buf[i + m] = a[i] - t;
+
+    // Iterative FFT butterfly operations
+    for (int len = 2; len <= n; len <<= 1) {
+        double ang = 2 * PI / len * type;
+        Complex wlen(std::cos(ang), std::sin(ang));
+        for (int i = 0; i < n; i += len) {
+            Complex w(1, 0);
+            for (int j = 0; j < len / 2; ++j) {
+                Complex u = a[i + j];
+                Complex v = a[i + j + len / 2] * w;
+                a[i + j] = u + v;
+                a[i + j + len / 2] = u - v;
+                w = w * wlen;
+            }
+        }
     }
-    memcpy(a, buf, sizeof(Complex) * n);
+
+    // Normalize for inverse transform
+    if (type == -1) {
+        for (int i = 0; i < n; ++i) {
+            a[i].a /= n;
+            a[i].b /= n;
+        }
+    }
 }
 
 bool Encryptor::encrypt_block(std::vector<std::pair<double, double>> &res) {
@@ -66,27 +92,34 @@ bool Encryptor::decrypt_block(std::vector<int> &res) {
     fft(block, N, -1);
     res.clear();
     for (int i = 0; i < N; i++) {
-        res.push_back((int)(block[i].a / N + 0.5));
-        if (block[i].a < 0.0 && std::abs(block[i].a) > 1e-2) res.back()--;
+        int rounded_value = static_cast<int>(std::round(block[i].a));
+        if (block[i].a < 0.0 && std::abs(block[i].a) > ROUNDING_THRESHOLD) {
+            rounded_value--;
+        }
+        res.push_back(rounded_value);
     }
     return true;
 }
 
-bool Encryptor::encrypt_sequence(std::vector<int> &sequence, std::vector<std::pair<double, double>> &res) {
-    int len = sequence.size(), idx = 1;
-    while ((sequence.size() + 1) % N != 0) sequence.push_back(PLACEHOLDER);
-    memset(block, 0, sizeof block);
+bool Encryptor::encrypt_sequence(const std::vector<int> &sequence, std::vector<std::pair<double, double>> &res) {
+    int len = sequence.size();
+    std::vector<int> padded_sequence = sequence;
+    while ((padded_sequence.size() + 1) % N != 0) {
+        padded_sequence.push_back(PLACEHOLDER);
+    }
+    int block_index = 1;
+    memset(block, 0, sizeof(block));
     block[0].a = len;
     res.clear();
-    std::vector<std::pair<double, double>> tmp;
-    for (auto &it : sequence) {
-        block[idx++].a = it;
-        if (idx == N) {
-            encrypt_block(tmp);
-            res.insert(res.end(), tmp.begin(), tmp.end());
-            idx = 0;
-            memset(block, 0, sizeof block);
-            tmp.clear();
+    std::vector<std::pair<double, double>> temp_buffer;
+    for (auto &element : padded_sequence) {
+        block[block_index++].a = element;
+        if (block_index == N) {
+            encrypt_block(temp_buffer);
+            res.insert(res.end(), temp_buffer.begin(), temp_buffer.end());
+            block_index = 0;
+            memset(block, 0, sizeof(block));
+            temp_buffer.clear();
         }
     }
     return true;
@@ -94,25 +127,25 @@ bool Encryptor::encrypt_sequence(std::vector<int> &sequence, std::vector<std::pa
 
 bool Encryptor::decrypt_sequence(std::vector<std::pair<double, double>> &sequence, std::vector<int> &res) {
     if (sequence.size() % N != 0) return false;
-    memset(block, 0, sizeof block);
-    int idx = 0;
+    memset(block, 0, sizeof(block));
+    int block_index = 0;
     res.clear();
     int len = -1;
-    std::vector<int> tmp;
-    for (auto &it : sequence) {
-        block[idx].a = it.first;
-        block[idx++].b = it.second;
-        if (idx == N) {
-            decrypt_block(tmp);
+    std::vector<int> temp_buffer;
+    for (auto &element : sequence) {
+        block[block_index].a = element.first;
+        block[block_index++].b = element.second;
+        if (block_index == N) {
+            decrypt_block(temp_buffer);
             if (len != -1) {
-                res.insert(res.end(), tmp.begin(), tmp.end());
+                res.insert(res.end(), temp_buffer.begin(), temp_buffer.end());
             } else {
-                len = tmp.front();
-                res.insert(res.end(), tmp.begin() + 1, tmp.end());
+                len = temp_buffer.front();
+                res.insert(res.end(), temp_buffer.begin() + 1, temp_buffer.end());
             }
-            idx = 0;
-            memset(block, 0, sizeof block);
-            tmp.clear();
+            block_index = 0;
+            memset(block, 0, sizeof(block));
+            temp_buffer.clear();
         }
     }
     res.erase(res.begin() + len, res.end());
