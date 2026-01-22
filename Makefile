@@ -49,6 +49,24 @@ MAIN_BUILD_SRCS = \
 	lib/storage_manager.cpp
 MAIN_BUILD_OBJS = $(addprefix $(BUILD_DIR)/,$(notdir $(MAIN_BUILD_SRCS:.cpp=.o)))
 
+# Files that main.cpp includes directly via #include
+# These need to be tracked as dependencies so Make rebuilds when they change
+MAIN_INCLUDES = \
+	lib/logger.cpp \
+	lib/saver.cpp \
+	lib/encryptor.cpp \
+	lib/file_manager.cpp \
+	lib/node_manager.cpp \
+	lib/version_manager.cpp \
+	lib/file_system.cpp \
+	lib/command_interpreter.cpp \
+	lib/terminal.cpp \
+	lib/file_system_operations.cpp \
+	lib/repositories/saver_file_manager_repository.cpp \
+	lib/repositories/saver_node_manager_repository.cpp \
+	lib/repositories/saver_version_manager_repository.cpp \
+	lib/repositories/saver_command_repository.cpp
+
 # ============================================================================
 # Build Rules
 # ============================================================================
@@ -59,7 +77,7 @@ all: $(TARGET)
 # Build main application
 # NOTE: main.cpp includes most .cpp files directly. We compile standalone .cpp files
 # separately and link them together (this is necessary due to the current code structure)
-$(TARGET): $(MAIN_BUILD_OBJS) main.cpp
+$(TARGET): $(MAIN_BUILD_OBJS) main.cpp $(MAIN_INCLUDES)
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDE_DIRS) $(MAIN_BUILD_OBJS) main.cpp -o $@
 	@echo "Built: $@"

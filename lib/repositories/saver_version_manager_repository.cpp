@@ -4,8 +4,8 @@
 #include "fvm/interfaces/ISaver.h"
 #include "fvm/interfaces/ILogger.h"
 #include "fvm/repositories/IVersionManagerRepository.h"
-#include "../version_manager.cpp"  // For treeNode, versionNode
-#include "../bs_tree.cpp"  // For treeNode definition
+#include "fvm/bs_tree.h"  // For treeNode definition
+#include "../version_manager.cpp"  // For versionNode
 
 namespace fvm {
 namespace repositories {
@@ -74,9 +74,9 @@ public:
             }
 
             treeNode* t = new treeNode();
-            if (type == 0) t->type = treeNode::FILE;
-            else if (type == 1) t->type = treeNode::DIR;
-            else t->type = treeNode::HEAD_NODE;
+            if (type == 0) t->type = FILE_NODE;
+            else if (type == 1) t->type = DIR_NODE;
+            else t->type = HEAD_NODE;
             t->cnt = cnt;
             t->link = link;
 

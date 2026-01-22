@@ -8,256 +8,68 @@
 @ Author: Mu Xiangyu, Chant Mee
 */
 
-#ifndef BS_TREE_CPP
-#define BS_TREE_CPP
-
-#include "fvm/interfaces/ILogger.h"
-#include "fvm/interfaces/INodeManager.h"
-#include "node_manager.cpp"
-#include "logger.cpp"
+#include "fvm/bs_tree.h"
 #include <algorithm>
-#include <vector>
 
-/**
- * @brief 
- * This class implements the basic functions of the file system tree structure.
- * This class only implements the most basic operations on the tree, and other 
- * specific operations such as file addition, deletion, checking and modification 
- * are implemented in the FileSystem class.
- */
-struct treeNode {
-    /**
-     * @brief 
-     * List the types of tree nodes. It may be files, folders, head nodes.
-     */
-    enum TYPE {
-        FILE = 0, DIR, HEAD_NODE
-    };
-
-    TYPE type;
-    int cnt;
-    unsigned long long link;
-    treeNode *next_brother, *first_son;
-
-    treeNode();
-    treeNode(TYPE type);
-};
-
-class BSTree {
-private:
-    fvm::interfaces::ILogger& logger_;
-    fvm::interfaces::INodeManager& node_manager_;
-public:
-    BSTree(fvm::interfaces::ILogger& logger, fvm::interfaces::INodeManager& node_manager);
-    ~BSTree() = default;
-protected:
-    /**
-     * @brief
-     * The path vector plays a very important role in the entire tree and file system.
-     * This variable holds the simple path from the root node to the node to be operated.
-     *
-     * When the user needs to enter a folder, first change the content of the path to
-     * make it point to the target folder, and then add first_son to the path variable
-     * through other functions, and then enter the folder;
-     * When the user wants to delete the file, It also points to the file through the
-     * same operation, and then deletes it through other functions;
-     * There is a very important function in the FileSystem class called rebuild_tree,
-     * which also uses path to find the node it needs and rebuild nodes.
-     * And many more.. All in all, this is a very very important variable.
-     */
-    std::vector<treeNode*> path;
-
-    /**
-     * @brief
-     * Use this function to check whether the nodes in the path are all legal.
-     * What it checks are:
-     * 1. Whether path is empty. If it is empty, this is abnormal, because there should
-     * be at least one root directory in the path.
-     * 2. Check whether there is a null pointer in the path.
-     *
-     * @return true
-     * No problem with the path.
-     *
-     * @return false
-     * The path is empty or there is a null pointer.
-     */
-    bool check_path();
-
-    /**
-     * @brief
-     * Use this function to check whether a node in the tree is legal.
-     * What it checks are:
-     * 1. Whether the node is a null pointer.
-     * 2. Check whether the counter of the node is less than or equal to 0.
-     * If it is less than or equal to 0, then the node should be deleted, but it has
-     * not been deleted now, which is obviously abnormal.
-     *
-     * @param p
-     * The node you want to check.
-     *
-     * @param line
-     * The line number where you are calling the function.
-     * This is mainly used to help you locate the wrong location.
-     * (You can't let the wrong position in this function. QAQ)
-     *
-     * @return true
-     * This means that there is no problem with the node.
-     *
-     * @return false
-     * This means that the node check failed, and the specific reason can be
-     * obtained through the information in the logger.
-     */
-    bool check_node(treeNode *p, int line);
-
-    /**
-     * @brief
-     * Check if the last element in path is a child node.
-     * The principle of inspection is to determine whether the node type of the
-     * tree is head_node.
-     *
-     * @return true
-     * This means that the last node in the path is a child node.
-     *
-     * @return false
-     * This means that the node is not a child node or the node's node test failed.
-     */
-    bool is_son();
-
-    /**
-     * @brief
-     * Adjust the path to the last node in the folder.
-     * It is by constantly accessing next_brother until it gets the null pointer position.
-     *
-     * @return true
-     * The path is successfully adjusted to the last node in the folder.
-     *
-     * @return false
-     * The path check before or after adjustment failed.
-     */
-    bool goto_tail();
-
-    /**
-     * @brief
-     * Adjust the path to the head node in the folder.
-     * It is by constantly checking whether the last element in the path is a child node,
-     * and if it is not, the last element is continuously popped up until the child node
-     * is found.
-     *
-     * @return true
-     * The path is successfully adjusted to the head node.
-     *
-     * @return false
-     * The path check before or after adjustment failed.
-     */
-    bool goto_head();
-
-    /**
-     * @brief
-     * Check if the name exists in the current folder.
-     *
-     * @param name
-     * The name you want to check.
-     *
-     * @return true
-     * The name exists in this folder.
-     *
-     * @return false
-     * The name does not exist in the folder or the list_directory_contents
-     * function returns an error.
-     */
-    bool name_exist(std::string name);
-
-    /**
-     * @brief
-     * Adjust the path to the node named name.
-     *
-     * @param name
-     * Adjust the path to the node named name.
-     *
-     * @return true
-     * The path is successfully adjusted to the target node.
-     *
-     * @return false
-     * The target node does not exist or the goto_head function returns an error.
-     */
-    bool go_to(std::string name);
-
-    /**
-     * @brief
-     * Adjust the path to the upper level directory.
-     * It should be noted that this function will reserve two nodes in
-     * the path, one is the root directory, and the other is the head node corresponding
-     * to root's first_son.
-     *
-     * @return true
-     * The path is successfully adjusted to the upper level directory.
-     *
-     * @return false
-     * The goto_head or check_path function returns an error.
-     */
-    bool goto_last_dir();
-
-    /**
-     * @brief
-     * List all file folders in the current directory.
-     * The listed list is arranged in the order of creation.
-     * The list only contains the names of files or folders, not their types, creation
-     * time, and modification time. This information can be obtained through the
-     * get_update_time, get_create_time, and get_type functions in the FileSystem class.
-     *
-     * @param content
-     * The names of files and folders in this folder are stored in this variable.
-     * Note that this variable is a reference.
-     *
-     * @return true
-     * The names of the files and folders in the folder have been saved to the
-     * content variable.
-     *
-     * @return false
-     * The goto_head function or check_path function returns an error.
-     */
-    bool list_directory_contents(std::vector<std::string> &content);
-
-    /**
-     * @brief
-     * Get the directory of the current folder.
-     *
-     * @param path
-     * The path of the current folder is stored in this variable.
-     * The principle of this function is:
-     * Save the original path array first. Then keep goto_head, record the name of
-     * the penultimate node of the path, and goto_last_dir until the number of nodes
-     * in the path becomes two. (Only root and root's first_son —— head_node)
-     *
-     * @return true
-     * Successfully get the path of the current folder and store the path in the path array.
-     *
-     * @return false
-     * The goto_head function or the goto_last_dir function returns an error.
-     */
-    bool get_current_path(std::vector<std::string> &path);
-};
-
-
+namespace fvm {
 
                         /* ======= struct treeNode ======= */
-treeNode::treeNode() = default;
+inline treeNode::treeNode() : treeNode(TreeNodeType()) {}  // Default constructor
 
-treeNode::treeNode(TYPE type) {
+treeNode::treeNode(TreeNodeType type) {
     this->type = type;
     this->cnt = 1;
     this->next_brother = nullptr;
     this->link = -1;
-    if (type == FILE || type == HEAD_NODE) this->first_son = nullptr;
-    else if (type == DIR) this->first_son = new treeNode(HEAD_NODE);
+    this->child_index = nullptr;  // OPTIMIZATION: Initialize to nullptr
+
+    if (type == FILE_NODE || type == HEAD_NODE) {
+        this->first_son = nullptr;
+    } else if (type == DIR_NODE) {
+        this->first_son = new treeNode(HEAD_NODE);
+        // OPTIMIZATION: Create child index for DIR nodes
+        this->child_index = new std::unordered_map<std::string, treeNode*>();
+    }
+}
+
+// OPTIMIZATION: Destructor to clean up child_index
+treeNode::~treeNode() {
+    delete child_index;  // Safe to delete nullptr
+    child_index = nullptr;
 }
 
 
                         /* ======= class BSTree ======= */
 
 BSTree::BSTree(fvm::interfaces::ILogger& logger, fvm::interfaces::INodeManager& node_manager)
-    : logger_(logger), node_manager_(node_manager) {
+    : logger_(logger), node_manager_(node_manager), path_cache_valid_(false) {
     path.clear();
+}
+
+// OPTIMIZATION: Ensure child index is built for a directory node
+// Lazily builds the index from the sibling list on first access
+void BSTree::ensure_child_index(treeNode* dir_node) {
+    if (dir_node == nullptr || dir_node->type != DIR_NODE) {
+        return;  // Only DIR nodes need an index
+    }
+    if (dir_node->child_index != nullptr) {
+        return;  // Index already built
+    }
+
+    // Create the index
+    dir_node->child_index = new std::unordered_map<std::string, treeNode*>();
+
+    // Traverse siblings starting from first_son (which is HEAD_NODE)
+    treeNode* current = dir_node->first_son;
+    if (current != nullptr && current->next_brother != nullptr) {
+        // Skip HEAD_NODE and index all actual children
+        for (treeNode* child = current->next_brother; child != nullptr; child = child->next_brother) {
+            if (child->link != (unsigned long long)-1) {
+                std::string name = node_manager_.get_name(child->link);
+                (*dir_node->child_index)[name] = child;
+            }
+        }
+    }
 }
 
 bool BSTree::check_path() {
@@ -293,6 +105,8 @@ bool BSTree::is_son() {
 
 bool BSTree::goto_tail() {
     if (!check_path()) return false;
+    // OPTIMIZATION: Invalidate path cache since path will change
+    invalidate_path_cache();
     while (path.back()->next_brother != nullptr) {
         path.push_back(path.back()->next_brother);
     }
@@ -302,12 +116,26 @@ bool BSTree::goto_tail() {
 
 bool BSTree::goto_head() {
     if (!check_path()) return false;
+    // OPTIMIZATION: Invalidate path cache since path will change
+    invalidate_path_cache();
     for (; !path.empty() && !is_son(); path.pop_back());
     if (!check_path()) return false;
     return true;
 }
 
 bool BSTree::name_exist(std::string name) {
+    if (!goto_head()) return false;
+    if (path.size() < 2) return false;
+
+    // Get parent directory node (second-to-last in path)
+    treeNode* parent_dir = path[path.size() - 2];
+
+    // OPTIMIZATION: Use child index if available for O(1) lookup
+    if (parent_dir->child_index != nullptr) {
+        return parent_dir->child_index->find(name) != parent_dir->child_index->end();
+    }
+
+    // Fallback: traverse siblings (O(n))
     std::vector<std::string> dir_content;
     if (!list_directory_contents(dir_content)) return false;
     for (auto &nm : dir_content) {
@@ -317,11 +145,40 @@ bool BSTree::name_exist(std::string name) {
 }
 
 bool BSTree::go_to(std::string name) {
+    if (!goto_head()) return false;
+
+    // Get parent directory node (second-to-last in path)
+    // After goto_head(), path.back() is HEAD_NODE, so parent is at size()-2
+    if (path.size() < 2) {
+        logger_.log("Invalid path size for go_to", fvm::interfaces::LogLevel::FATAL, __LINE__);
+        return false;
+    }
+
+    treeNode* parent_dir = path[path.size() - 2];
+
+    // OPTIMIZATION: Use child index if available for O(1) lookup
+    ensure_child_index(parent_dir);
+
+    if (parent_dir->child_index != nullptr) {
+        auto it = parent_dir->child_index->find(name);
+        if (it != parent_dir->child_index->end()) {
+            // OPTIMIZATION: Invalidate path cache since path will change
+            invalidate_path_cache();
+            path.push_back(it->second);
+            return true;
+        } else {
+            logger_.log("no file or directory named " + name, fvm::interfaces::LogLevel::WARNING, __LINE__);
+            return false;
+        }
+    }
+
+    // Fallback: linear scan (O(n)) for compatibility during migration
     if (!name_exist(name)) {
         logger_.log("no file or directory named " + name, fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
-    if (!goto_head()) return false;
+    // OPTIMIZATION: Invalidate path cache since path will change
+    invalidate_path_cache();
     while (node_manager_.get_name(path.back()->link) != name) {
         if (path.back()->next_brother == nullptr) {
             return false;
@@ -334,6 +191,8 @@ bool BSTree::go_to(std::string name) {
 bool BSTree::goto_last_dir() {
     if (!goto_head()) return false;
     if (path.size() > 2) {
+        // OPTIMIZATION: Invalidate path cache since path will change
+        invalidate_path_cache();
         path.pop_back();
     }
     if (!check_path()) return false;
@@ -343,28 +202,57 @@ bool BSTree::goto_last_dir() {
 bool BSTree::list_directory_contents(std::vector<std::string> &content) {
     if (!goto_head()) return false;
     if (!check_path()) return false;
-    while (path.back()->next_brother != nullptr) {
-        content.push_back(node_manager_.get_name(path.back()->next_brother->link));
-        path.push_back(path.back()->next_brother);
+
+    // Get parent directory node (second-to-last in path)
+    if (path.size() < 2) return false;
+    treeNode* parent_dir = path[path.size() - 2];
+
+    // OPTIMIZATION: Use child index if available (O(1) iteration)
+    ensure_child_index(parent_dir);
+
+    if (parent_dir->child_index != nullptr) {
+        content.clear();
+        content.reserve(parent_dir->child_index->size());
+        for (const auto& pair : *parent_dir->child_index) {
+            content.push_back(pair.first);
+        }
+        return true;
+    }
+
+    // Fallback: traverse siblings without modifying path
+    content.clear();
+    treeNode* head_node = path.back();
+    for (treeNode* node = head_node->next_brother; node != nullptr; node = node->next_brother) {
+        content.push_back(node_manager_.get_name(node->link));
     }
     return true;
 }
 
 bool BSTree::get_current_path(std::vector<std::string> &p) {
-    auto path_backup = path;
-    if (!goto_head()) goto restore;
-    while (path.size() > 2) {
-        p.push_back(node_manager_.get_name(path[path.size() - 2]->link));
-        if (!goto_last_dir()) goto restore;
-        if (!goto_head()) goto restore;
+    // OPTIMIZATION: Use cached path if valid (O(1) on cache hit)
+    if (path_cache_valid_) {
+        p = cached_path_;
+        return true;
     }
-    p.push_back(node_manager_.get_name(path.front()->link));
-    path = path_backup;
-    std::reverse(p.begin(), p.end());
+
+    // OPTIMIZATION: Build path directly from path vector (O(d) instead of O(d²))
+    // The path vector contains: root -> HEAD_NODE -> dir1 -> HEAD_NODE -> dir2 -> HEAD_NODE -> ...
+    // We need to extract names from DIR nodes (every other node starting from root)
+    p.clear();
+
+    for (size_t i = 0; i < path.size(); i++) {
+        treeNode* node = path[i];
+        // Skip HEAD_NODE nodes (type == 2)
+        if (node->type != HEAD_NODE) {
+            p.push_back(node_manager_.get_name(node->link));
+        }
+    }
+
+    // Update cache
+    cached_path_ = p;
+    path_cache_valid_ = true;
+
     return true;
-restore:
-    path = path_backup;
-    return false;
 }
 
-#endif
+} // namespace fvm

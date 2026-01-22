@@ -103,7 +103,7 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
    std::string get_content_content;       // case 10
    std::string tree_content;              // case 11
    std::vector<std::string> ls_content;   // case 13
-   std::vector<std::pair<unsigned long long, versionNode>> version_content; // case 15
+   std::vector<std::pair<unsigned long long, fvm::versionNode>> version_content; // case 15
    std::string file_name;                 // case 19
    std::string cmd;                       // case 19
    std::string content;                   // case 19

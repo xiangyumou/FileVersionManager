@@ -5,11 +5,11 @@
 #include <string>
 #include <vector>
 
-// Forward declaration - Node is defined in node_manager.cpp
-// This works because implementation files include node_manager.cpp
+namespace fvm {
+
+// Forward declaration
 struct Node;
 
-namespace fvm {
 namespace repositories {
 
 class INodeManagerRepository {

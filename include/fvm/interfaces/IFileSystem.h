@@ -4,11 +4,12 @@
 #include <string>
 #include <vector>
 
-// Forward declarations - must be in global namespace
+namespace fvm {
+
+// Forward declarations
 struct treeNode;
 struct versionNode;
 
-namespace fvm {
 namespace interfaces {
 
 class IFileSystem {

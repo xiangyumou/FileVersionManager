@@ -15,8 +15,8 @@
 #include "fvm/interfaces/IFileSystem.h"
 #include "fvm/interfaces/INodeManager.h"
 #include "fvm/interfaces/IVersionManager.h"
+#include "fvm/bs_tree.h"
 #include "version_manager.cpp"
-#include "bs_tree.cpp"
 #include "node_manager.cpp"
 #include "logger.cpp"
 #include <ctime>
@@ -32,7 +32,7 @@
  * class, this class is the class closest to the user. Users can use various functions of the
  * file system by creating objects of this class, but it is not very convenient.
  */
-class FileSystem : private BSTree, public fvm::interfaces::IFileSystem {
+class FileSystem : private fvm::BSTree, public fvm::interfaces::IFileSystem {
 private:
     fvm::interfaces::ILogger& logger_;
     fvm::interfaces::INodeManager& node_manager_;
@@ -54,7 +54,7 @@ private:
      * If the check_node function, node_mamager.delete_node function returns an error, then 
      * this function will also return an error.
      */
-    bool decrease_counter(treeNode *p);
+    bool decrease_counter(fvm::treeNode *p);
 
     /**
      * @brief 
@@ -75,7 +75,7 @@ private:
      * is normal to return False. Because this function will inevitably recurse to the 
      * boundary of the tree.
      */
-    bool recursive_delete_nodes(treeNode *p, bool delete_brother=false);
+    bool recursive_delete_nodes(fvm::treeNode *p, bool delete_brother=false);
 
     /**
      * @brief 
@@ -108,7 +108,7 @@ private:
      * If the check_path function, check_node function, and decrease_counter function return 
      * an error, then this function will also return an error.
      */
-    bool rebuild_nodes(treeNode *p);
+    bool rebuild_nodes(fvm::treeNode *p);
 
     /**
      * @brief 
@@ -130,7 +130,7 @@ private:
      * But don't worry, if the user does not call the function, it will return an error. This 
      * is normal, because this function will inevitably recurse to the boundary of the tree.
      */
-    bool travel_tree(treeNode *p, std::string &tree_info, int tab_cnt);
+    bool travel_tree(fvm::treeNode *p, std::string &tree_info, int tab_cnt);
 
     /**
      * @brief 
@@ -188,7 +188,7 @@ public:
      * @return false
      * A null pointer was encountered.
      */
-    bool travel_tree(treeNode *p, std::string &tree_info) override;
+    bool travel_tree(fvm::treeNode *p, std::string &tree_info) override;
 
     /**
      * @brief 
@@ -444,7 +444,7 @@ public:
      * @return false 
      * emm.. Take a look at the get_version_log function in version_manager.
      */
-    bool version(std::vector<std::pair<unsigned long long, versionNode>>& version_log) override;
+    bool version(std::vector<std::pair<unsigned long long, fvm::versionNode>>& version_log) override;
 
     /**
      * @brief
@@ -565,7 +565,7 @@ public:
 FileSystem::FileSystem(fvm::interfaces::ILogger& logger,
                          fvm::interfaces::INodeManager& node_manager,
                          fvm::interfaces::IVersionManager& version_manager)
-    : BSTree(logger, node_manager),
+    : fvm::BSTree(logger, node_manager),
       logger_(logger),
       node_manager_(node_manager),
       version_manager_(version_manager) {
@@ -577,7 +577,7 @@ FileSystem::FileSystem(fvm::interfaces::ILogger& logger,
     switch_version(latest_version_id);
 }
 
-bool FileSystem::decrease_counter(treeNode *p) {
+bool FileSystem::decrease_counter(fvm::treeNode *p) {
     if (!check_node(p, __LINE__)) return false;
     if (p->cnt == 0 || --p->cnt == 0) {
         logger_.log("Node " + node_manager_.get_name(p->link) + " will be deleted...");
@@ -588,7 +588,7 @@ bool FileSystem::decrease_counter(treeNode *p) {
     return true;
 }
 
-bool FileSystem::recursive_delete_nodes(treeNode *p, bool delete_brother) {
+bool FileSystem::recursive_delete_nodes(fvm::treeNode *p, bool delete_brother) {
     if (p == nullptr) {
         return true;
     }
@@ -600,22 +600,43 @@ bool FileSystem::recursive_delete_nodes(treeNode *p, bool delete_brother) {
 
 bool FileSystem::delete_node() {
     if (!check_path()) return false;
-    treeNode *t = path.back();
+    fvm::treeNode *t = path.back();
     if (!check_node(t, __LINE__)) return false;
+
+    // Get the name of the node being deleted before modifying path
+    std::string deleted_name = node_manager_.get_name(t->link);
+
     path.pop_back();
+
+    // Get parent directory node (now at path.back() after pop)
+    fvm::treeNode* parent_dir = path.back();
+
     if (!rebuild_nodes(t->next_brother)) return false;
     if (!decrease_counter(t)) return false;
+
+    // OPTIMIZATION: Remove deleted child from parent's child_index
+    if (parent_dir != nullptr && parent_dir->child_index != nullptr) {
+        parent_dir->child_index->erase(deleted_name);
+    }
+
     return true;
 }
 
-bool FileSystem::rebuild_nodes(treeNode *p) {
+bool FileSystem::rebuild_nodes(fvm::treeNode *p) {
     if (!check_path()) return false;
     int relation = 0;   // 0 next_brother 1 first_son
-    std::stack<treeNode*> stk;
+    std::stack<fvm::treeNode*> stk;
     stk.push(p);
     for (; check_node(path.back(), __LINE__) && path.back()->cnt > 1; path.pop_back()) {
-        treeNode *t = new treeNode();
-        (*t) = (*path.back());
+        fvm::treeNode *t = new fvm::treeNode();
+        (*t) = (*path.back());  // Shallow copy
+
+        // OPTIMIZATION: Deep copy child_index for COW semantics
+        // The shallow copy copies the pointer, but we need our own index
+        if (path.back()->child_index != nullptr) {
+            t->child_index = new std::unordered_map<std::string, fvm::treeNode*>(*path.back()->child_index);
+        }
+
         node_manager_.increase_counter(t->link);
         if (relation == 1) t->first_son = stk.top();
         else t->next_brother = stk.top();
@@ -624,7 +645,7 @@ bool FileSystem::rebuild_nodes(treeNode *p) {
         if (!decrease_counter(path.back())) {
             // Clean up all nodes in stk
             while (!stk.empty()) {
-                treeNode *node = stk.top();
+                fvm::treeNode *node = stk.top();
                 stk.pop();
                 if (node != p) {
                     delete node;
@@ -644,12 +665,12 @@ bool FileSystem::rebuild_nodes(treeNode *p) {
     return true;
 }
 
-bool FileSystem::travel_tree(treeNode *p, std::string &tree_info, int tab_cnt) {
+bool FileSystem::travel_tree(fvm::treeNode *p, std::string &tree_info, int tab_cnt) {
     if (p == nullptr) {
         logger_.log("Get a null pointer in line " + std::to_string(__LINE__));
         return false;
     }
-    if (p->type == 2) {
+    if (p->type == fvm::HEAD_NODE) {
         travel_tree(p->next_brother, tree_info, tab_cnt);
         return true;
     }
@@ -671,7 +692,7 @@ bool FileSystem::travel_tree(treeNode *p, std::string &tree_info, int tab_cnt) {
 }
 
 // Public wrapper function
-bool FileSystem::travel_tree(treeNode* p, std::string& tree_info) {
+bool FileSystem::travel_tree(fvm::treeNode* p, std::string& tree_info) {
     return travel_tree(p, tree_info, 1);
 }
 
@@ -728,7 +749,7 @@ bool FileSystem::switch_version(unsigned long long version_id) {
         return false;
     }
     CURRENT_VERSION = version_id;
-    treeNode *p;
+    fvm::treeNode *p;
     if (!version_manager_.get_version_pointer(version_id, p)) {
         return false;
     }
@@ -748,12 +769,23 @@ bool FileSystem::make_file(const std::string& name) {
         return false;
     }
     if (!goto_tail()) return false;
-    treeNode *t = new treeNode(treeNode::FILE);
+
+    // Get parent directory node before rebuild_nodes modifies path
+    // After goto_tail(), path.back() is the last sibling, parent is at size()-2
+    fvm::treeNode* parent_dir = (path.size() >= 2) ? path[path.size() - 2] : nullptr;
+
+    fvm::treeNode *t = new fvm::treeNode(fvm::FILE_NODE);
     t->link = node_manager_.get_new_node(name);
     if (!rebuild_nodes(t)) {
         delete t;
         return false;
     }
+
+    // OPTIMIZATION: Add new child to parent's child_index
+    if (parent_dir != nullptr && parent_dir->child_index != nullptr) {
+        (*parent_dir->child_index)[name] = t;
+    }
+
     return true;
 }
 
@@ -763,7 +795,12 @@ bool FileSystem::make_dir(const std::string& name) {
         return false;
     }
     if (!goto_tail()) return false;
-    treeNode *t = new treeNode(treeNode::DIR);
+
+    // Get parent directory node before rebuild_nodes modifies path
+    // After goto_tail(), path.back() is the last sibling, parent is at size()-2
+    fvm::treeNode* parent_dir = (path.size() >= 2) ? path[path.size() - 2] : nullptr;
+
+    fvm::treeNode *t = new fvm::treeNode(fvm::DIR_NODE);
     if (t == nullptr) {
         logger_.log("The system did not allocate memory for this operation.", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
@@ -773,12 +810,18 @@ bool FileSystem::make_dir(const std::string& name) {
         delete t;
         return false;
     }
+
+    // OPTIMIZATION: Add new child to parent's child_index
+    if (parent_dir != nullptr && parent_dir->child_index != nullptr) {
+        (*parent_dir->child_index)[name] = t;
+    }
+
     return true;
 }
 
 bool FileSystem::change_directory(const std::string& name) {
     if (!go_to(name)) return false;
-    if (path.back()->type != 1) {
+    if (path.back()->type != fvm::DIR_NODE) {
         logger_.log(name + ": Not a directory.");
         return false;
     }
@@ -791,29 +834,57 @@ bool FileSystem::change_directory(const std::string& name) {
 
 bool FileSystem::remove_file(const std::string& name) {
     if (!go_to(name)) return false;
-    if (path.back()->type != 0) {
+    if (path.back()->type != fvm::FILE_NODE) {
         logger_.log(name + ": Not a file.");
         return false;
     }
-    treeNode *t = path.back();
+    fvm::treeNode *t = path.back();
+
+    // Get the name of the file being deleted before modifying path
+    std::string deleted_name = node_manager_.get_name(t->link);
+
     path.pop_back();
+
+    // Get parent directory node (now at path.back() after pop)
+    fvm::treeNode* parent_dir = path.back();
+
     if (!check_path()) return false;
     if (!rebuild_nodes(t->next_brother)) return false;
     if (!decrease_counter(t)) return false;
+
+    // OPTIMIZATION: Remove deleted child from parent's child_index
+    if (parent_dir != nullptr && parent_dir->child_index != nullptr) {
+        parent_dir->child_index->erase(deleted_name);
+    }
+
     return true;
 }
 
 bool FileSystem::remove_dir(const std::string& name) {
     if (!go_to(name)) return false;
-    if (path.back()->type != 1) {
+    if (path.back()->type != fvm::DIR_NODE) {
         logger_.log(name + ": Not a directory.");
         return false;
     }
     if (!check_path()) return false;
-    treeNode *t = path.back();
+    fvm::treeNode *t = path.back();
+
+    // Get the name of the directory being deleted before modifying path
+    std::string deleted_name = node_manager_.get_name(t->link);
+
     path.pop_back();        // 20211023
+
+    // Get parent directory node (now at path.back() after pop)
+    fvm::treeNode* parent_dir = path.back();
+
     if (!rebuild_nodes(t->next_brother)) return false;
     if (!recursive_delete_nodes(t)) return false;
+
+    // OPTIMIZATION: Remove deleted child from parent's child_index
+    if (parent_dir != nullptr && parent_dir->child_index != nullptr) {
+        parent_dir->child_index->erase(deleted_name);
+    }
+
     return true;
 }
 
@@ -823,32 +894,49 @@ bool FileSystem::update_name(const std::string& fr_name, const std::string& to_n
         logger_.log(to_name + ": Name exists.", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
-    treeNode *t = new treeNode();
+    fvm::treeNode *t = new fvm::treeNode();
     if (t == nullptr) {
         logger_.log("The system did not allocate memory for this operation.", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
     if (!check_path()) return false;
-    treeNode *back = path.back();
+    fvm::treeNode *back = path.back();
     *t = *back;
     t->cnt = 1;
     t->link = node_manager_.update_name(t->link, to_name);
+
+    // OPTIMIZATION: Handle child_index for renamed node
+    // The shallow copy copies child_index pointer, we need to clear it (DIR nodes will rebuild)
+    // For FILE/HEAD_NODE nodes, child_index should be nullptr anyway
+    t->child_index = nullptr;
+
     path.pop_back();
+
+    // Get parent directory node (now at path.back() after pop)
+    fvm::treeNode* parent_dir = path.back();
+
     if (!rebuild_nodes(t)) return false;
-    if (!decrease_counter(back)) return false; 
-    // 这里必须最后decrease，如果提前回导致节点丢失
+    if (!decrease_counter(back)) return false;
+
+    // OPTIMIZATION: Update parent's child_index with new name
+    if (parent_dir != nullptr && parent_dir->child_index != nullptr) {
+        // Remove old name, add new name
+        parent_dir->child_index->erase(fr_name);
+        (*parent_dir->child_index)[to_name] = t;
+    }
+
     return true;
 }
 
 bool FileSystem::update_content(const std::string& name, const std::string& content) {
     if (!go_to(name)) return false;
     if (!check_path()) return false;
-    if (path.back()->type != 0) {
+    if (path.back()->type != fvm::FILE_NODE) {
         logger_.log(name + ": Not a file.");
         return false;
     }
-    treeNode *back = path.back();
-    treeNode *t = new treeNode();
+    fvm::treeNode *back = path.back();
+    fvm::treeNode *t = new fvm::treeNode();
     if (t == nullptr) {
         logger_.log("The system did not allocate memory for this operation.", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
@@ -868,7 +956,7 @@ bool FileSystem::update_content(const std::string& name, const std::string& cont
 bool FileSystem::get_content(const std::string& name, std::string& content) {
     if (!go_to(name)) return false;
     if (!check_path()) return false;
-    if (path.back()->type != 0) {
+    if (path.back()->type != fvm::FILE_NODE) {
         logger_.log(name + ": Not a file.");
         return false;
     }
@@ -883,10 +971,10 @@ bool FileSystem::tree(std::string& tree_info) {
 }
 
 bool FileSystem::goto_last_dir() {
-    return BSTree::goto_last_dir();
+    return fvm::BSTree::goto_last_dir();
 }
 bool FileSystem::list_directory_contents(std::vector<std::string> &content) {
-    return BSTree::list_directory_contents(content);
+    return fvm::BSTree::list_directory_contents(content);
 }
 
 bool FileSystem::create_version(unsigned long long model_version, const std::string& info) {
@@ -903,7 +991,7 @@ bool FileSystem::create_version(const std::string& info, unsigned long long mode
     return create_version(model_version, info);
 }
 
-bool FileSystem::version(std::vector<std::pair<unsigned long long, versionNode>>& version_log) {
+bool FileSystem::version(std::vector<std::pair<unsigned long long, fvm::versionNode>>& version_log) {
     return version_manager_.get_version_log(version_log);
 }
 
@@ -926,7 +1014,7 @@ bool FileSystem::get_type(const std::string& name, int& type) {
 }
 
 bool FileSystem::get_current_path(std::vector<std::string>& p) {
-    if (!BSTree::get_current_path(p)) return false;
+    if (!fvm::BSTree::get_current_path(p)) return false;
     return true;
 }
 

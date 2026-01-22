@@ -12,7 +12,6 @@
 #include "lib/logger.cpp"
 #include "lib/saver.cpp"
 #include "lib/encryptor.cpp"
-#include "lib/bs_tree.cpp"
 #include "lib/file_manager.cpp"
 #include "lib/node_manager.cpp"
 #include "lib/version_manager.cpp"

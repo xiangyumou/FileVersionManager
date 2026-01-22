@@ -25,6 +25,8 @@
 #include <string>
 #include <map>
 
+namespace fvm {
+
 /**
  * @brief
  * This class implements the abstraction of nodes.
@@ -48,7 +50,7 @@ public:
 
 class NodeManager : public fvm::interfaces::INodeManager {
 private:
-    std::map<unsigned long long, std::pair<unsigned long long, Node>> mp;
+    std::map<unsigned long long, std::pair<unsigned long long, fvm::Node>> mp;
     fvm::interfaces::IFileManager& file_manager_;
     fvm::repositories::INodeManagerRepository& repository_;
     fvm::interfaces::ILogger& logger_;
@@ -89,7 +91,7 @@ public:
 
                         /* ======= class Node ======= */
 
-std::string Node::get_time() {
+std::string fvm::Node::get_time() {
     if (clock_) {
         return clock_->get_current_time(8);  // UTC+8 for China timezone
     }
@@ -102,10 +104,10 @@ std::string Node::get_time() {
     return std::string(t);
 }
 
-Node::Node(fvm::interfaces::IFileManager* file_manager, fvm::interfaces::ISystemClock* clock)
+fvm::Node::Node(fvm::interfaces::IFileManager* file_manager, fvm::interfaces::ISystemClock* clock)
     : file_manager_(file_manager), clock_(clock) {}
 
-Node::Node(fvm::interfaces::IFileManager* file_manager, std::string name, fvm::interfaces::ISystemClock* clock)
+fvm::Node::Node(fvm::interfaces::IFileManager* file_manager, std::string name, fvm::interfaces::ISystemClock* clock)
     : file_manager_(file_manager), clock_(clock) {
     this->name = name;
     this->create_time = get_time();
@@ -113,14 +115,14 @@ Node::Node(fvm::interfaces::IFileManager* file_manager, std::string name, fvm::i
     this->fid = file_manager_->create_file("");
 }
 
-void Node::update_update_time() {
+void fvm::Node::update_update_time() {
     this->update_time = get_time();
 }
 
 
                         /* ======= class NodeManager ======= */
 
-bool NodeManager::node_exist(unsigned long long id) {
+bool fvm::NodeManager::node_exist(unsigned long long id) {
     return mp.count(id);
 }
 
@@ -249,5 +251,7 @@ unsigned long long NodeManager::_get_counter(unsigned long long idx) {
 // Singleton accessor removed - use dependency injection instead
 
 // Test functions removed - use main.cpp for testing with proper DI
+
+} // namespace fvm
 
 #endif

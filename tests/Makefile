@@ -9,6 +9,7 @@ TEST_OBJECTS = $(TEST_SOURCES:.cpp=.o)
 
 # Only compile standalone sources that don't include other .cpp files
 # NOTE: saver.cpp includes logger.cpp, so we don't include logger.o separately
+# NOTE: bs_tree.h is header-only, no object file needed
 MAIN_OBJECTS = \
 	../build/random.o \
 	../build/system_clock.o \

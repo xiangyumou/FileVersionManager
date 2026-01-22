@@ -5,12 +5,12 @@
 #include <string>
 #include <vector>
 
-// Forward declarations - treeNode is defined in bs_tree.cpp, versionNode in version_manager.cpp
-// This works because implementation files include the necessary .cpp files
+namespace fvm {
+
+// Forward declarations
 struct treeNode;
 struct versionNode;
 
-namespace fvm {
 namespace repositories {
 
 class IVersionManagerRepository {
