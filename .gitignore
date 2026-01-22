@@ -4,3 +4,4 @@ main
 *.wal
 ffvms
 .DS_Store
+build/
