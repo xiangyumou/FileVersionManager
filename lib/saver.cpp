@@ -13,6 +13,8 @@
 
 #include "logger.cpp"
 #include "encryptor.cpp"
+#include "fvm/interfaces/ISaver.h"
+#include "fvm/interfaces/ILogger.h"
 #include <cctype>
 #include <vector>
 #include <string>
@@ -72,7 +74,7 @@ struct dataNode {
  * that, if the user wants this set of data, he only needs to provide the name of the 
  * data, and the user can get a copy that is exactly the same as when he stored it.
  */
-class Saver : private Encryptor {
+class Saver : private Encryptor, public fvm::interfaces::ISaver {
 private:
     /**
      * @brief
@@ -87,7 +89,7 @@ private:
      */
     std::map<unsigned long long, dataNode> mp;
 
-    Logger &logger;
+    fvm::interfaces::ILogger& logger_;
 
     /**
      * @brief
@@ -178,7 +180,7 @@ private:
     bool atomic_write(const std::string& filename, const std::string& content);
 
 public:
-    Saver(Logger &logger = Logger::get_logger());
+    Saver(fvm::interfaces::ILogger& logger);
     
     /**
      * 保存的格式：
@@ -194,28 +196,29 @@ public:
      * 数据的字符表示
      * 每个单元之间都用空格隔开
     */
-    bool save(std::string name, std::vector<std::vector<std::string>> &content);
-    bool load(std::string name, std::vector<std::vector<std::string>> &content, bool mandatory_access = false);
-    static bool is_all_digits(std::string &s);
-    static unsigned long long str_to_ull(std::string &s);
-    static Saver& get_saver();
+    bool save(const std::string& name, std::vector<std::vector<std::string>>& content) override;
+    bool load(const std::string& name, std::vector<std::vector<std::string>>& content, bool mandatory_access = false) override;
+    bool is_all_digits(std::string& s) override;
+    unsigned long long str_to_ull(std::string& s) override;
+
+    // Singleton accessor removed - use dependency injection instead
 
     // New WAL-related public methods
-    bool flush();                        // Immediately flush WAL to disk
-    bool compact();                      // Manually trigger WAL compaction
-    size_t get_wal_size() const;         // Get current WAL entry count
-    bool set_auto_compact(size_t threshold);  // Set auto-compact threshold
-    bool set_wal_enabled(bool enabled);  // Enable/disable WAL
+    bool flush() override;                        // Immediately flush WAL to disk
+    bool compact() override;                      // Manually trigger WAL compaction
+    size_t get_wal_size() const override;         // Get current WAL entry count
+    bool set_auto_compact(size_t threshold) override;  // Set auto-compact threshold
+    bool set_wal_enabled(bool enabled) override;  // Enable/disable WAL
 
     // 配置持久化支持（供 Config 类使用）
-    std::string get_data_file() const { return data_file; }
-    std::string get_wal_file() const { return wal_file; }
-    bool get_wal_enabled() const { return enable_wal; }
-    size_t get_auto_compact_threshold() const { return auto_compact_threshold; }
+    std::string get_data_file() const override { return data_file; }
+    std::string get_wal_file() const override { return wal_file; }
+    bool get_wal_enabled() const override { return enable_wal; }
+    size_t get_auto_compact_threshold() const override { return auto_compact_threshold; }
 
     // 直接设置配置值（用于 Config::apply_to_saver）
-    void set_wal_enabled_direct(bool enabled) { enable_wal = enabled; }
-    void set_auto_compact_threshold_direct(size_t threshold) { auto_compact_threshold = threshold; }
+    void set_wal_enabled_direct(bool enabled) override { enable_wal = enabled; }
+    void set_auto_compact_threshold_direct(size_t threshold) override { auto_compact_threshold = threshold; }
 };
 
 
@@ -247,7 +250,7 @@ unsigned long long Saver::get_hash(T &s) {
 bool Saver::load_file() {
     std::ifstream in(data_file);
     if (!in.good()) {
-        logger.log("load_file: No data file.", Logger::WARNING, __LINE__);
+        logger_.log("load_file: No data file.", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
     mp.clear();
@@ -258,21 +261,21 @@ bool Saver::load_file() {
         if (!(in >> name_hash)) {
             if (in.eof()) break;  // Normal end of file
             mp.clear();
-            logger.log("Failed to read name_hash. File may be corrupted.", Logger::WARNING, __LINE__);
+            logger_.log("Failed to read name_hash. File may be corrupted.", fvm::interfaces::LogLevel::WARNING, __LINE__);
             return false;
         }
 
         // Check if we can read data_hash
         if (!(in >> data_hash)) {
             mp.clear();
-            logger.log("Failed to read data_hash. File may be corrupted.", Logger::WARNING, __LINE__);
+            logger_.log("Failed to read data_hash. File may be corrupted.", fvm::interfaces::LogLevel::WARNING, __LINE__);
             return false;
         }
 
         // Check if we can read len
         if (!(in >> len)) {
             mp.clear();
-            logger.log("Failed to read data length. File may be corrupted.", Logger::WARNING, __LINE__);
+            logger_.log("Failed to read data length. File may be corrupted.", fvm::interfaces::LogLevel::WARNING, __LINE__);
             return false;
         }
 
@@ -281,7 +284,7 @@ bool Saver::load_file() {
             double a, b;
             if (!(in >> a >> b)) {
                 mp.clear();
-                logger.log("Failed to read data pair. File may be corrupted.", Logger::WARNING, __LINE__);
+                logger_.log("Failed to read data pair. File may be corrupted.", fvm::interfaces::LogLevel::WARNING, __LINE__);
                 return false;
             }
             data.push_back(std::make_pair(a, b));
@@ -325,7 +328,7 @@ int Saver::read(std::string &s) {
     return d;
 }
 
-Saver::Saver(Logger &logger) : logger(logger) {
+Saver::Saver(fvm::interfaces::ILogger& logger) : logger_(logger) {
     load_file();
     load_from_wal();  // Replay WAL after loading main file
 }
@@ -347,7 +350,7 @@ Saver::~Saver() {
  * 数据的字符表示
  * 每个单元之间都用空格隔开
 */
-bool Saver::save(std::string name, std::vector<std::vector<std::string>> &content) {
+bool Saver::save(const std::string& name, std::vector<std::vector<std::string>>& content) {
     // Optimized serialization using stringstream (O(n) instead of O(n²))
     std::ostringstream oss;
 
@@ -373,17 +376,17 @@ bool Saver::save(std::string name, std::vector<std::vector<std::string>> &conten
     return true;
 }
 
-bool Saver::load(std::string name, std::vector<std::vector<std::string>> &content, bool mandatory_access) {
+bool Saver::load(const std::string& name, std::vector<std::vector<std::string>>& content, bool mandatory_access) {
     unsigned long long name_hash = get_hash(name);
     if (!mp.count(name_hash)) {
-        logger.log("Failed to load data. No data named A exists. ", Logger::WARNING, __LINE__);
+        logger_.log("Failed to load data. No data named A exists. ", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
     dataNode &data = mp[name_hash];
     std::vector<int> sequence;
     decrypt_sequence(data.data, sequence);
     if (get_hash(sequence) != data.data_hash) {
-        logger.log("Data failed to pass integrity verification.", Logger::WARNING, __LINE__);
+        logger_.log("Data failed to pass integrity verification.", fvm::interfaces::LogLevel::WARNING, __LINE__);
         if (!mandatory_access) return false;
     }
     std::string str;
@@ -406,7 +409,7 @@ bool Saver::load(std::string name, std::vector<std::vector<std::string>> &conten
         for (int j = 0; j < data_num; j++) {
             data_len = read(str);
             if (str.size() < data_len) {
-                logger.log("Failed to load data. No data named A exists. ", Logger::WARNING, __LINE__);
+                logger_.log("Failed to load data. No data named A exists. ", fvm::interfaces::LogLevel::WARNING, __LINE__);
                 return false;
             }
             content.back().push_back(std::string(str.begin(), str.begin() + data_len));
@@ -432,10 +435,7 @@ unsigned long long Saver::str_to_ull(std::string &s) {
     return res;
 }
 
-Saver& Saver::get_saver() {
-    static Saver saver(Logger::get_logger());
-    return saver;
-}
+// Singleton accessor removed - use dependency injection instead
 
 
                         /* ======= WAL and Optimization Methods ======= */
@@ -444,21 +444,21 @@ bool Saver::atomic_write(const std::string& filename, const std::string& content
     std::string tmp_file = filename + ".tmp";
     std::ofstream out(tmp_file, std::ios::binary | std::ios::trunc);
     if (!out.good()) {
-        logger.log("atomic_write: Failed to create temp file " + tmp_file, Logger::FATAL, __LINE__);
+        logger_.log("atomic_write: Failed to create temp file " + tmp_file, fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
     out << content;
     out.close();
 
     if (!out.good()) {
-        logger.log("atomic_write: Failed to write to temp file " + tmp_file, Logger::FATAL, __LINE__);
+        logger_.log("atomic_write: Failed to write to temp file " + tmp_file, fvm::interfaces::LogLevel::FATAL, __LINE__);
         std::remove(tmp_file.c_str());
         return false;
     }
 
     // Atomic rename from temp to target
     if (std::rename(tmp_file.c_str(), filename.c_str()) != 0) {
-        logger.log("atomic_write: Failed to rename temp file to " + filename, Logger::FATAL, __LINE__);
+        logger_.log("atomic_write: Failed to rename temp file to " + filename, fvm::interfaces::LogLevel::FATAL, __LINE__);
         std::remove(tmp_file.c_str());
         return false;
     }
@@ -486,7 +486,7 @@ bool Saver::flush_wal(const WalEntry& entry) {
     // Append to WAL file
     std::ofstream out(wal_file, std::ios::app | std::ios::binary);
     if (!out.good()) {
-        logger.log("flush_wal: Failed to open WAL file for appending", Logger::FATAL, __LINE__);
+        logger_.log("flush_wal: Failed to open WAL file for appending", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
 
@@ -494,7 +494,7 @@ bool Saver::flush_wal(const WalEntry& entry) {
     out.close();
 
     if (!out.good()) {
-        logger.log("flush_wal: Failed to write to WAL file", Logger::FATAL, __LINE__);
+        logger_.log("flush_wal: Failed to write to WAL file", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
 
@@ -528,7 +528,7 @@ bool Saver::load_from_wal() {
 
         std::istringstream iss(line);
         if (!(iss >> op_type >> name_hash >> data_hash >> len)) {
-            logger.log("load_from_wal: Invalid WAL entry format", Logger::WARNING, __LINE__);
+            logger_.log("load_from_wal: Invalid WAL entry format", fvm::interfaces::LogLevel::WARNING, __LINE__);
             continue;
         }
 
@@ -536,7 +536,7 @@ bool Saver::load_from_wal() {
         for (int i = 0; i < len * N; i++) {
             double a, b;
             if (!(iss >> a >> b)) {
-                logger.log("load_from_wal: Invalid WAL data pair", Logger::WARNING, __LINE__);
+                logger_.log("load_from_wal: Invalid WAL data pair", fvm::interfaces::LogLevel::WARNING, __LINE__);
                 break;
             }
             data.push_back(std::make_pair(a, b));
@@ -582,7 +582,7 @@ bool Saver::compact() {
     }
 
     if (!atomic_write(data_file, oss.str())) {
-        logger.log("compact: Failed to write compacted data file", Logger::FATAL, __LINE__);
+        logger_.log("compact: Failed to write compacted data file", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
 
@@ -591,7 +591,7 @@ bool Saver::compact() {
     out.close();
     wal_entry_count = 0;
 
-    logger.log("compact: Successfully compacted WAL to main file", Logger::INFO, __LINE__);
+    logger_.log("compact: Successfully compacted WAL to main file", fvm::interfaces::LogLevel::INFO, __LINE__);
     return true;
 }
 
@@ -607,7 +607,7 @@ size_t Saver::get_wal_size() const {
 
 bool Saver::set_auto_compact(size_t threshold) {
     if (threshold == 0) {
-        logger.log("set_auto_compact: Threshold must be > 0", Logger::WARNING, __LINE__);
+        logger_.log("set_auto_compact: Threshold must be > 0", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
     auto_compact_threshold = threshold;
@@ -620,35 +620,6 @@ bool Saver::set_wal_enabled(bool enabled) {
 }
 
 
-int test_saver() {
-// int main() {
-    Logger &logger = Logger::get_logger();
-    Saver &saver = Saver::get_saver();
-    
-    vvs data;
-    std::string name = "test";
-
-    data.push_back(std::vector<std::string>());
-
-    data.back().push_back("1");
-    data.back().push_back("2");
-    // data.push_back(std::vector<std::string>());
-    // data.back().push_back("3");
-    // data.back().push_back("4");
-
-    // std::cout << data.size() << '\n';
-
-    saver.save(name, data);
-
-    saver.load(name, data);
-    for (auto &it : data) {
-        for (auto &t : it) {
-            std::cout << t << '\n';
-        }
-        std::cout << '\n';
-    }
-    
-    return 0;
-}
+// Test functions removed - use main.cpp for testing with proper DI
 
 #endif

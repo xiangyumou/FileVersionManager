@@ -11,6 +11,8 @@
 #ifndef BS_TREE_CPP
 #define BS_TREE_CPP
 
+#include "fvm/interfaces/ILogger.h"
+#include "fvm/interfaces/INodeManager.h"
 #include "node_manager.cpp"
 #include "logger.cpp"
 #include <algorithm>
@@ -43,10 +45,10 @@ struct treeNode {
 
 class BSTree {
 private:
-    Logger &logger;
-    NodeManager &node_manager;
+    fvm::interfaces::ILogger& logger_;
+    fvm::interfaces::INodeManager& node_manager_;
 public:
-    BSTree(Logger &logger, NodeManager &node_manager);
+    BSTree(fvm::interfaces::ILogger& logger, fvm::interfaces::INodeManager& node_manager);
 protected:
     /**
      * @brief 
@@ -252,19 +254,19 @@ treeNode::treeNode(TYPE type) {
 
                         /* ======= class BSTree ======= */
 
-BSTree::BSTree(Logger &logger, NodeManager &node_manager)
-    : logger(logger), node_manager(node_manager) {
+BSTree::BSTree(fvm::interfaces::ILogger& logger, fvm::interfaces::INodeManager& node_manager)
+    : logger_(logger), node_manager_(node_manager) {
     path.clear();
 }
 
 bool BSTree::check_path() {
     if (path.empty()) {
-        logger.log("Path is empty. This not normal.", Logger::FATAL, __LINE__);
+        logger_.log("Path is empty. This not normal.", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
     for (auto &it : path) {
         if (it == nullptr) {
-            logger.log("Null pointer exists in path. This not normal.", Logger::FATAL, __LINE__);
+            logger_.log("Null pointer exists in path. This not normal.", fvm::interfaces::LogLevel::FATAL, __LINE__);
             return false;
         }
     }
@@ -273,11 +275,11 @@ bool BSTree::check_path() {
 
 bool BSTree::check_node(treeNode *p, int line) {
     if (p == nullptr) {
-        logger.log("The pointer is empty, please check whether the program is correct.", Logger::FATAL, line);
+        logger_.log("The pointer is empty, please check whether the program is correct.", fvm::interfaces::LogLevel::FATAL, line);
         return false;
     }
     if (p->cnt <= 0) {
-        logger.log("The node counter is already less than or equal to 0, please check the program!", Logger::FATAL, line);
+        logger_.log("The node counter is already less than or equal to 0, please check the program!", fvm::interfaces::LogLevel::FATAL, line);
         return false;
     }
     return true;
@@ -315,11 +317,11 @@ bool BSTree::name_exist(std::string name) {
 
 bool BSTree::go_to(std::string name) {
     if (!name_exist(name)) {
-        logger.log("no file or directory named " + name, Logger::WARNING, __LINE__);
+        logger_.log("no file or directory named " + name, fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
     if (!goto_head()) return false;
-    while (node_manager.get_name(path.back()->link) != name) {
+    while (node_manager_.get_name(path.back()->link) != name) {
         if (path.back()->next_brother == nullptr) {
             return false;
         }
@@ -341,7 +343,7 @@ bool BSTree::list_directory_contents(std::vector<std::string> &content) {
     if (!goto_head()) return false;
     if (!check_path()) return false;
     while (path.back()->next_brother != nullptr) {
-        content.push_back(node_manager.get_name(path.back()->next_brother->link));
+        content.push_back(node_manager_.get_name(path.back()->next_brother->link));
         path.push_back(path.back()->next_brother);
     }
     return true;
@@ -351,11 +353,11 @@ bool BSTree::get_current_path(std::vector<std::string> &p) {
     auto path_backup = path;
     if (!goto_head()) goto restore;
     while (path.size() > 2) {
-        p.push_back(node_manager.get_name(path[path.size() - 2]->link));
+        p.push_back(node_manager_.get_name(path[path.size() - 2]->link));
         if (!goto_last_dir()) goto restore;
         if (!goto_head()) goto restore;
     }
-    p.push_back(node_manager.get_name(path.front()->link));
+    p.push_back(node_manager_.get_name(path.front()->link));
     path = path_backup;
     std::reverse(p.begin(), p.end());
     return true;

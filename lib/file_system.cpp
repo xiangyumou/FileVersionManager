@@ -11,10 +11,13 @@
 #ifndef FILE_SYSTEM_CPP
 #define FILE_SYSTEM_CPP
 
+#include "fvm/interfaces/ILogger.h"
+#include "fvm/interfaces/IFileSystem.h"
+#include "fvm/interfaces/INodeManager.h"
+#include "fvm/interfaces/IVersionManager.h"
 #include "version_manager.cpp"
 #include "bs_tree.cpp"
 #include "node_manager.cpp"
-#include "saver.cpp"
 #include "logger.cpp"
 #include <ctime>
 #include <string>
@@ -29,11 +32,11 @@
  * class, this class is the class closest to the user. Users can use various functions of the 
  * file system by creating objects of this class, but it is not very convenient.
  */
-class FileSystem : private BSTree {
+class FileSystem : private BSTree, public fvm::interfaces::IFileSystem {
 private:
-    Logger &logger;
-    NodeManager &node_manager;
-    VersionManager version_manager;
+    fvm::interfaces::ILogger& logger_;
+    fvm::interfaces::INodeManager& node_manager_;
+    fvm::interfaces::IVersionManager& version_manager_;
     unsigned long long CURRENT_VERSION = 0;
 
     /**
@@ -165,7 +168,9 @@ private:
     bool kmp(std::string str, std::string tar);
 
 public:
-    FileSystem(Logger &logger, NodeManager &node_manager, VersionManager &version_manager);
+    FileSystem(fvm::interfaces::ILogger& logger,
+               fvm::interfaces::INodeManager& node_manager,
+               fvm::interfaces::IVersionManager& version_manager);
 
     /**
      * @brief
@@ -183,7 +188,7 @@ public:
      * @return false
      * A null pointer was encountered.
      */
-    bool travel_tree(treeNode *p, std::string &tree_info);
+    bool travel_tree(treeNode *p, std::string &tree_info) override;
 
     /**
      * @brief 
@@ -201,7 +206,7 @@ public:
      * If the version does not exist or version_manager returns an error, then False will be 
      * returned here. Please check the information of logger for specific reasons.
      */
-    bool switch_version(unsigned long long version_id);
+    bool switch_version(unsigned long long version_id) override;
 
     /**
      * @brief 
@@ -217,142 +222,142 @@ public:
      * If the name exists or the goto_tail and rebuild functions return an error, then an 
      * error will also be returned here.
      */
-    bool make_file(std::string name);
+    bool make_file(const std::string& name) override;
 
     /**
-     * @brief 
+     * @brief
      * Create a new folder under the current folder.
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the folder you want to create.
-     * 
-     * @return true 
+     *
+     * @return true
      * Successfully create a new folder under the current folder.
-     * 
-     * @return false 
-     * If the name exists or the goto_tail and rebuild functions return an error, then an 
+     *
+     * @return false
+     * If the name exists or the goto_tail and rebuild functions return an error, then an
      * error will also be returned here.
      */
-    bool make_dir(std::string name);
+    bool make_dir(const std::string& name) override;
 
     /**
-     * @brief 
-     * This function is equivalent to the cd command in the Linux system, which is to enter 
+     * @brief
+     * This function is equivalent to the cd command in the Linux system, which is to enter
      * the folder specified by the user.
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the folder you want to enter.
-     * 
-     * @return true 
+     *
+     * @return true
      * Successfully enter the folder you want to enter.
-     * 
-     * @return false 
-     * If the go_to function, check_node function returns an error, or the name does not 
+     *
+     * @return false
+     * If the go_to function, check_node function returns an error, or the name does not
      * correspond to a folder, then an error will be returned.
      */
-    bool change_directory(std::string name);
+    bool change_directory(const std::string& name) override;
 
     /**
-     * @brief 
+     * @brief
      * Delete the target file from the current folder.
-     * Notice! ! ! If you want to delete a folder, you need to use the remove_dir function. 
-     * Because deleting the folder then needs to delete all the files in the folder 
+     * Notice! ! ! If you want to delete a folder, you need to use the remove_dir function.
+     * Because deleting the folder then needs to delete all the files in the folder
      * recursively, and the file only needs to delete itself! ! !
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the file you want to delete.
-     * 
-     * @return true 
+     *
+     * @return true
      * The file was successfully deleted from the folder.
-     * 
-     * @return false 
-     * If the go_to function, check_path function, rebuild_nodes function, reduce_counter 
-     * function returns an error or the name does not correspond to a file, then an error 
+     *
+     * @return false
+     * If the go_to function, check_path function, rebuild_nodes function, reduce_counter
+     * function returns an error or the name does not correspond to a file, then an error
      * will be returned.
      */
-    bool remove_file(std::string name);
+    bool remove_file(const std::string& name) override;
 
     /**
-     * @brief 
-     * Delete the folder corresponding to the name from the folder. 
-     * This function will be used in conjunction with the recursive_delete_nodes function. 
-     * In other words, this function will first remove the node corresponding to the folder 
-     * from the folder, and then use the recursive_delete_nodes function to delete the tree 
+     * @brief
+     * Delete the folder corresponding to the name from the folder.
+     * This function will be used in conjunction with the recursive_delete_nodes function.
+     * In other words, this function will first remove the node corresponding to the folder
+     * from the folder, and then use the recursive_delete_nodes function to delete the tree
      * recursively using this node as the root.
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the folder you want to delete.
-     * 
-     * @return true 
+     *
+     * @return true
      * Successfully delete the target folder from the current folder.
-     * 
-     * @return false 
-     * If the go_to function, check_path function, rebuild_nodes function, 
-     * recursive_delete_nodes function returns an error or the name does not correspond to a 
+     *
+     * @return false
+     * If the go_to function, check_path function, rebuild_nodes function,
+     * recursive_delete_nodes function returns an error or the name does not correspond to a
      * folder, the function will also return an error.
      */
-    bool remove_dir(std::string name);
+    bool remove_dir(const std::string& name) override;
 
     /**
-     * @brief 
+     * @brief
      * Modify the name of the file or folder.
-     * 
-     * @param fr_name 
+     *
+     * @param fr_name
      * The name of the file or folder to be modified.
-     * 
-     * @param to_name 
+     *
+     * @param to_name
      * Change the name of the file or folder corresponding to fr_name to to_name.
-     * 
-     * @return true 
+     *
+     * @return true
      * The name of the file or folder was successfully modified.
-     * 
-     * @return false 
-     * If the go_to function, check_path function, rebuild_nodes function, reduce_counter 
+     *
+     * @return false
+     * If the go_to function, check_path function, rebuild_nodes function, reduce_counter
      * function return an error or the name does not exist, the function will return an error.
      */
-    bool update_name(std::string fr_name, std::string to_name);
+    bool update_name(const std::string& fr_name, const std::string& to_name) override;
 
     /**
-     * @brief 
+     * @brief
      * Use this function to modify the content of the file.
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the file you want to modify.
-     * 
-     * @param content 
+     *
+     * @param content
      * This is what you want to modify the file into.
-     * 
-     * @return true 
+     *
+     * @return true
      * The content in the file was successfully modified.
-     * 
-     * @return false 
-     * If the go_to function, check_path function, rebuild_nodes function, decrea_counter 
-     * function returns an error or the name does not correspond to a file, then this 
+     *
+     * @return false
+     * If the go_to function, check_path function, rebuild_nodes function, decrea_counter
+     * function returns an error or the name does not correspond to a file, then this
      * function will also return an error.
      */
-    bool update_content(std::string name, std::string content);
+    bool update_content(const std::string& name, const std::string& content) override;
 
     /**
      * @brief
      * Get the content stored in the file.
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the file you want to view.
-     * 
-     * @param content 
-     * If the function returns True, which means that the content of the file is successfully 
+     *
+     * @param content
+     * If the function returns True, which means that the content of the file is successfully
      * obtained, then the content of the file will be stored in content.
      * Note that the content here is passed in by reference!
-     * 
-     * @return true 
-     * It shows that the content in the file has been successfully obtained. The content of 
+     *
+     * @return true
+     * It shows that the content in the file has been successfully obtained. The content of
      * the file is stored in content.
-     * 
-     * @return false 
-     * If the go_to function, check_path function returns an error or the name does not 
+     *
+     * @return false
+     * If the go_to function, check_path function returns an error or the name does not
      * correspond to a file, the function will return an error.
      */
-    bool get_content(std::string name, std::string &content);
+    bool get_content(const std::string& name, std::string& content) override;
 
     /**
      * @brief 
@@ -377,7 +382,7 @@ public:
      * and return an error, this is abnormal, because it means that the path.front() pointer 
      * we passed in is a null pointer! !
      */
-    bool tree(std::string &tree_info);
+    bool tree(std::string &tree_info) override;
 
     /**
      * @brief 
@@ -392,14 +397,14 @@ public:
      * @return false 
      * Um, take a look in BSTree. QAQ
      */
-    bool goto_last_dir();
+    bool goto_last_dir() override;
 
     /**
      * @brief 
      * This function is implemented in BSTree. If you want to see specific information, you 
      * can go
      */
-    bool list_directory_contents(std::vector<std::string> &content);
+    bool list_directory_contents(std::vector<std::string> &content) override;
 
     /**
      * @brief
@@ -417,11 +422,11 @@ public:
      * A new version was successfully created. And automatically switch to the latest version.
      * 
      * @return false 
-     * If the version_manager.create_version function, get_latest_version function, 
+     * If the version_manager_.create_version function, get_latest_version function,
      * switch_version function returns an error, then this function will also return an error.
      */
-    bool create_version(unsigned long long model_version=NO_MODEL_VERSION, std::string info="");
-    bool create_version(std::string info = "", unsigned long long model_version=NO_MODEL_VERSION);
+    bool create_version(unsigned long long model_version = NO_MODEL_VERSION, const std::string& info = "") override;
+    bool create_version(const std::string& info = "", unsigned long long model_version = NO_MODEL_VERSION);
 
     /**
      * @brief 
@@ -439,74 +444,74 @@ public:
      * @return false 
      * emm.. Take a look at the get_version_log function in version_manager.
      */
-    bool version(std::vector<std::pair<unsigned long long, versionNode>> &version_log);
+    bool version(std::vector<std::pair<unsigned long long, versionNode>>& version_log) override;
 
     /**
      * @brief
      * Most of this function is implemented in NodeManager.
      * Get the update time of a file or folder.
-     * For a folder, modifying its name is considered to have been modified; for a file, if 
-     * you want to modify its content or modify the file name, it is considered to have been 
+     * For a folder, modifying its name is considered to have been modified; for a file, if
+     * you want to modify its content or modify the file name, it is considered to have been
      * modified.
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the file or folder for which you want to obtain information.
-     * 
-     * @param update_time 
-     * If the acquisition is successful, the acquired update time is stored in update_time. 
+     *
+     * @param update_time
+     * If the acquisition is successful, the acquired update time is stored in update_time.
      * Note that update_time is passed into the function as a reference.
-     * 
-     * @return true 
+     *
+     * @return true
      * Get the update time successfully, and save the update time in update_time.
-     * 
-     * @return false 
-     * If the go_to function or node_manager.get_update_time returns an error, then this 
+     *
+     * @return false
+     * If the go_to function or node_manager_.get_update_time returns an error, then this
      * function will also return an error.
      * Details can be obtained in the logger's information.
      */
-    bool get_update_time(std::string name, std::string &update_time);
+    bool get_update_time(const std::string& name, std::string& update_time) override;
 
     /**
      * @brief
      * Most of this function is implemented in NodeManager.
      * Get the creation time of a file or folder through this function.
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the file or folder for which you want to obtain information.
-     * 
-     * @param create_time 
-     * If the creation time is successfully obtained, the storage time will be stored in 
+     *
+     * @param create_time
+     * If the creation time is successfully obtained, the storage time will be stored in
      * create_time.
      * Note that create_time is passed into the function by reference.
-     * 
-     * @return true 
+     *
+     * @return true
      * Get the update time successfully, and save the create time in create_time.
-     * 
-     * @return false 
-     * If the go_to function or node_manager.get_create_time returns an error, then this 
+     *
+     * @return false
+     * If the go_to function or node_manager_.get_create_time returns an error, then this
      * function will also return an error.
      * Details can be obtained in the logger's information.
      */
-    bool get_create_time(std::string name, std::string &create_time);
+    bool get_create_time(const std::string& name, std::string& create_time) override;
 
     /**
      * @brief
      * Know whether the name corresponds to a file or a folder.
-     * 
-     * @param name 
+     *
+     * @param name
      * The name of the type of node that you want to know.
-     * 
-     * @param type 
+     *
+     * @param type
      * If the node type is successfully obtained, the node type will be stored in type.
      * Note that type is passed into the function by reference.
-     * 
-     * @return true 
+     *
+     * @return true
      * The type is successfully obtained, and the node type has been stored in type.
-     * 
-     * @return false 
+     *
+     * @return false
      * If the go_to function returns an error, then the input will also return an error.
      */
-    bool get_type(std::string name, treeNode::TYPE &type);
+    bool get_type(const std::string& name, int& type) override;
 
     /**
      * @brief
@@ -520,25 +525,25 @@ public:
      * @return true 
      * @return false 
      */
-    bool get_current_path(std::vector<std::string> &p);
+    bool get_current_path(std::vector<std::string> &p) override;
 
     /**
-     * @brief 
-     * Search for files or folders whose names contain a certain character string in the 
+     * @brief
+     * Search for files or folders whose names contain a certain character string in the
      * current version.
-     * 
-     * @param name 
+     *
+     * @param name
      * If the name of the file or folder contains the string, it will be searched.
-     * 
-     * @param res 
+     *
+     * @param res
      * The results of the search are stored in res.
      * Note that res is passed into the function by reference.
-     * 
-     * @return true 
-     * @return false 
+     *
+     * @return true
+     * @return false
      * This function should not go wrong at the moment, and mistakes are fatal errors. . QAQ
      */
-    bool Find(std::string name, std::vector<std::pair<std::string, std::vector<std::string>>> &res);
+    bool Find(const std::string& name, std::vector<std::pair<std::string, std::vector<std::string>>>& res) override;
 
     /**
      * @brief Get the current version object
@@ -547,7 +552,7 @@ public:
      * @return int 
      * The version number of the current version.
      */
-    int get_current_version();
+    int get_current_version() override;
 };
 
 
@@ -557,26 +562,28 @@ public:
 
                         /* ======= class FileSystem ======= */
 
-FileSystem::FileSystem(Logger &logger, NodeManager &node_manager, VersionManager &version_manager)
+FileSystem::FileSystem(fvm::interfaces::ILogger& logger,
+                         fvm::interfaces::INodeManager& node_manager,
+                         fvm::interfaces::IVersionManager& version_manager)
     : BSTree(logger, node_manager),
-      logger(logger),
-      node_manager(node_manager),
-      version_manager(version_manager) {
-    if (version_manager.empty()) {
-        version_manager.create_version();
+      logger_(logger),
+      node_manager_(node_manager),
+      version_manager_(version_manager) {
+    if (version_manager_.empty()) {
+        version_manager_.create_version();
     }
     unsigned long long latest_version_id;
-    if (!version_manager.get_latest_version(latest_version_id)) return;
+    if (!version_manager_.get_latest_version(latest_version_id)) return;
     switch_version(latest_version_id);
 }
 
 bool FileSystem::decrease_counter(treeNode *p) {
     if (!check_node(p, __LINE__)) return false;
     if (p->cnt == 0 || --p->cnt == 0) {
-        logger.log("Node " + node_manager.get_name(p->link) + " will be deleted...");
-        node_manager.delete_node(p->link);
+        logger_.log("Node " + node_manager_.get_name(p->link) + " will be deleted...");
+        node_manager_.delete_node(p->link);
         delete p;
-        logger.log("Deleting completed.");
+        logger_.log("Deleting completed.");
     }
     return true;
 }
@@ -609,7 +616,7 @@ bool FileSystem::rebuild_nodes(treeNode *p) {
     for (; check_node(path.back(), __LINE__) && path.back()->cnt > 1; path.pop_back()) {
         treeNode *t = new treeNode();
         (*t) = (*path.back());
-        node_manager.increase_counter(t->link);
+        node_manager_.increase_counter(t->link);
         if (relation == 1) t->first_son = stk.top();
         else t->next_brother = stk.top();
         relation = is_son();
@@ -639,7 +646,7 @@ bool FileSystem::rebuild_nodes(treeNode *p) {
 
 bool FileSystem::travel_tree(treeNode *p, std::string &tree_info, int tab_cnt) {
     if (p == nullptr) {
-        logger.log("Get a null pointer in line " + std::to_string(__LINE__));
+        logger_.log("Get a null pointer in line " + std::to_string(__LINE__));
         return false;
     }
     if (p->type == 2) {
@@ -655,7 +662,7 @@ bool FileSystem::travel_tree(treeNode *p, std::string &tree_info, int tab_cnt) {
             tree_info += "└── ";
         }
     }
-    tree_info += node_manager.get_name(p->link) + '\n';
+    tree_info += node_manager_.get_name(p->link) + '\n';
     tab_cnt++;
     travel_tree(p->first_son, tree_info, tab_cnt);
     tab_cnt--;
@@ -664,7 +671,7 @@ bool FileSystem::travel_tree(treeNode *p, std::string &tree_info, int tab_cnt) {
 }
 
 // Public wrapper function
-bool FileSystem::travel_tree(treeNode *p, std::string &tree_info) {
+bool FileSystem::travel_tree(treeNode* p, std::string& tree_info) {
     return travel_tree(p, tree_info, 1);
 }
 
@@ -697,10 +704,10 @@ bool FileSystem::kmp(std::string str, std::string tar) {
 }
 
 bool FileSystem::travel_find(std::string name, std::vector<std::pair<std::string, std::vector<std::string>>> &res) {
-    if (kmp(node_manager.get_name(path.back()->link), name)) {
+    if (kmp(node_manager_.get_name(path.back()->link), name)) {
         std::vector<std::string> p;
         if (!get_current_path(p)) return false;
-        res.push_back(std::make_pair(node_manager.get_name(path.back()->link), p));
+        res.push_back(std::make_pair(node_manager_.get_name(path.back()->link), p));
     }
     if (path.back()->next_brother != nullptr) {
         path.push_back(path.back()->next_brother);
@@ -716,33 +723,33 @@ bool FileSystem::travel_find(std::string name, std::vector<std::pair<std::string
 }
 
 bool FileSystem::switch_version(unsigned long long version_id) {
-    if (!version_manager.version_exist(version_id)) {
-        logger.log("This version is not in the system.");
+    if (!version_manager_.version_exist(version_id)) {
+        logger_.log("This version is not in the system.");
         return false;
     }
     CURRENT_VERSION = version_id;
     treeNode *p;
-    if (!version_manager.get_version_pointer(version_id, p)) {
+    if (!version_manager_.get_version_pointer(version_id, p)) {
         return false;
     }
     path.clear();
     path.push_back(p);
     if (p->first_son == nullptr) {
-        logger.log("The root directory does not have a \"first son\" folder, which is abnormal. Please check that the procedure is correct.", Logger::FATAL, __LINE__);
+        logger_.log("The root directory does not have a \"first son\" folder, which is abnormal. Please check that the procedure is correct.", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
     path.push_back(path.back()->first_son);
     return true;
 }
 
-bool FileSystem::make_file(std::string name) {
+bool FileSystem::make_file(const std::string& name) {
     if (name_exist(name)) {
-        logger.log(name + ": Name exist.");
+        logger_.log(name + ": Name exist.");
         return false;
     }
     if (!goto_tail()) return false;
     treeNode *t = new treeNode(treeNode::FILE);
-    t->link = node_manager.get_new_node(name);
+    t->link = node_manager_.get_new_node(name);
     if (!rebuild_nodes(t)) {
         delete t;
         return false;
@@ -750,18 +757,18 @@ bool FileSystem::make_file(std::string name) {
     return true;
 }
 
-bool FileSystem::make_dir(std::string name) {
+bool FileSystem::make_dir(const std::string& name) {
     if (name_exist(name)) {
-        logger.log(name + ": Name exist.");
+        logger_.log(name + ": Name exist.");
         return false;
     }
     if (!goto_tail()) return false;
     treeNode *t = new treeNode(treeNode::DIR);
     if (t == nullptr) {
-        logger.log("The system did not allocate memory for this operation.", Logger::FATAL, __LINE__);
+        logger_.log("The system did not allocate memory for this operation.", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
-    t->link = node_manager.get_new_node(name);
+    t->link = node_manager_.get_new_node(name);
     if (!rebuild_nodes(t)) {
         delete t;
         return false;
@@ -769,10 +776,10 @@ bool FileSystem::make_dir(std::string name) {
     return true;
 }
 
-bool FileSystem::change_directory(std::string name) {
+bool FileSystem::change_directory(const std::string& name) {
     if (!go_to(name)) return false;
     if (path.back()->type != 1) {
-        logger.log(name + ": Not a directory.");
+        logger_.log(name + ": Not a directory.");
         return false;
     }
     if (!check_node(path.back()->first_son, __LINE__)) {
@@ -782,10 +789,10 @@ bool FileSystem::change_directory(std::string name) {
     return true;
 }
 
-bool FileSystem::remove_file(std::string name) {
+bool FileSystem::remove_file(const std::string& name) {
     if (!go_to(name)) return false;
     if (path.back()->type != 0) {
-        logger.log(name + ": Not a file.");
+        logger_.log(name + ": Not a file.");
         return false;
     }
     treeNode *t = path.back();
@@ -796,10 +803,10 @@ bool FileSystem::remove_file(std::string name) {
     return true;
 }
 
-bool FileSystem::remove_dir(std::string name) {
+bool FileSystem::remove_dir(const std::string& name) {
     if (!go_to(name)) return false;
     if (path.back()->type != 1) {
-        logger.log(name + ": Not a directory.");
+        logger_.log(name + ": Not a directory.");
         return false;
     }
     if (!check_path()) return false;
@@ -810,22 +817,22 @@ bool FileSystem::remove_dir(std::string name) {
     return true;
 }
 
-bool FileSystem::update_name(std::string fr_name, std::string to_name) {
+bool FileSystem::update_name(const std::string& fr_name, const std::string& to_name) {
     if (!go_to(fr_name)) return false;
     if (name_exist(to_name)) {
-        logger.log(to_name + ": Name exists.", Logger::WARNING, __LINE__);
+        logger_.log(to_name + ": Name exists.", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
     treeNode *t = new treeNode();
     if (t == nullptr) {
-        logger.log("The system did not allocate memory for this operation.", Logger::FATAL, __LINE__);
+        logger_.log("The system did not allocate memory for this operation.", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
     if (!check_path()) return false;
     treeNode *back = path.back();
     *t = *back;
     t->cnt = 1;
-    t->link = node_manager.update_name(t->link, to_name);
+    t->link = node_manager_.update_name(t->link, to_name);
     path.pop_back();
     if (!rebuild_nodes(t)) return false;
     if (!decrease_counter(back)) return false; 
@@ -833,22 +840,22 @@ bool FileSystem::update_name(std::string fr_name, std::string to_name) {
     return true;
 }
 
-bool FileSystem::update_content(std::string name, std::string content) {
+bool FileSystem::update_content(const std::string& name, const std::string& content) {
     if (!go_to(name)) return false;
     if (!check_path()) return false;
     if (path.back()->type != 0) {
-        logger.log(name + ": Not a file.");
+        logger_.log(name + ": Not a file.");
         return false;
     }
     treeNode *back = path.back();
     treeNode *t = new treeNode();
     if (t == nullptr) {
-        logger.log("The system did not allocate memory for this operation.", Logger::FATAL, __LINE__);
+        logger_.log("The system did not allocate memory for this operation.", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
     *t = *back;
     t->cnt = 1;
-    t->link = node_manager.update_content(t->link, content);
+    t->link = node_manager_.update_content(t->link, content);
     path.pop_back();
     if (!rebuild_nodes(t)) {
         delete t;
@@ -858,20 +865,20 @@ bool FileSystem::update_content(std::string name, std::string content) {
     return true;
 }
 
-bool FileSystem::get_content(std::string name, std::string &content) {
+bool FileSystem::get_content(const std::string& name, std::string& content) {
     if (!go_to(name)) return false;
     if (!check_path()) return false;
     if (path.back()->type != 0) {
-        logger.log(name + ": Not a file.");
+        logger_.log(name + ": Not a file.");
         return false;
     }
-    content = node_manager.get_content(path.back()->link);
+    content = node_manager_.get_content(path.back()->link);
     return true;
 }
 
-bool FileSystem::tree(std::string &tree_info) {
+bool FileSystem::tree(std::string& tree_info) {
     if (!check_path()) return false;
-    if (!travel_tree(path.front(), tree_info)) return false;
+    if (!travel_tree(path.front(), tree_info, 1)) return false;
     return true;
 }
 
@@ -882,48 +889,48 @@ bool FileSystem::list_directory_contents(std::vector<std::string> &content) {
     return BSTree::list_directory_contents(content);
 }
 
-bool FileSystem::create_version(unsigned long long model_version, std::string info) {
-    if (!version_manager.create_version(model_version, info)) return false;
+bool FileSystem::create_version(unsigned long long model_version, const std::string& info) {
+    if (!version_manager_.create_version(model_version, info)) return false;
     unsigned long long latest_version;
-    if (!version_manager.get_latest_version(latest_version)) {
+    if (!version_manager_.get_latest_version(latest_version)) {
         return false;
     }
     if (!switch_version(latest_version)) return false;
     return true;
 }
 
-bool FileSystem::create_version(std::string info, unsigned long long model_version) {
+bool FileSystem::create_version(const std::string& info, unsigned long long model_version) {
     return create_version(model_version, info);
 }
 
-bool FileSystem::version(std::vector<std::pair<unsigned long long, versionNode>> &version_log) {
-    return version_manager.get_version_log(version_log);
+bool FileSystem::version(std::vector<std::pair<unsigned long long, versionNode>>& version_log) {
+    return version_manager_.get_version_log(version_log);
 }
 
-bool FileSystem::get_update_time(std::string name, std::string &update_time) {
+bool FileSystem::get_update_time(const std::string& name, std::string& update_time) {
     if (!go_to(name)) return false;
-    update_time = node_manager.get_update_time(path.back()->link);
+    update_time = node_manager_.get_update_time(path.back()->link);
     return true;
 }
 
-bool FileSystem::get_create_time(std::string name, std::string &create_time) {
+bool FileSystem::get_create_time(const std::string& name, std::string& create_time) {
     if (!go_to(name)) return false;
-    create_time = node_manager.get_create_time(path.back()->link);
+    create_time = node_manager_.get_create_time(path.back()->link);
     return true;
 }
 
-bool FileSystem::get_type(std::string name, treeNode::TYPE &type) {
+bool FileSystem::get_type(const std::string& name, int& type) {
     if (!go_to(name)) return false;
-    type = path.back()->type;
+    type = static_cast<int>(path.back()->type);
     return true;
 }
 
-bool FileSystem::get_current_path(std::vector<std::string> &p) {
+bool FileSystem::get_current_path(std::vector<std::string>& p) {
     if (!BSTree::get_current_path(p)) return false;
     return true;
 }
 
-bool FileSystem::Find(std::string name, std::vector<std::pair<std::string, std::vector<std::string>>> &res) {
+bool FileSystem::Find(const std::string& name, std::vector<std::pair<std::string, std::vector<std::string>>>& res) {
     auto path_backup = path;
     path.erase(path.begin() + 2, path.end());
     travel_find(name, res);

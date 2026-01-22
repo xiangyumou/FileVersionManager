@@ -19,16 +19,17 @@
 #include <cstdio>
 #include <vector>
 
-class Logger {
+#include "fvm/interfaces/ILogger.h"
+
+class Logger : public fvm::interfaces::ILogger {
 public:
-    enum LOG_LEVEL {
-        INFO = 0, DEBUG, WARNING, FATAL
-    };
+    // Use LogLevel from interface
+    using LOG_LEVEL = fvm::interfaces::LogLevel;
 
 private:
     // 配置
     std::string log_file;
-    LOG_LEVEL min_log_level;
+    fvm::interfaces::LogLevel min_log_level;
     int timezone_offset;
     bool enable_console_output;
     bool enable_file_rotation;
@@ -63,23 +64,23 @@ public:
     bool set_file_rotation(bool enable, size_t max_size = 10*1024*1024, int max_files = 5);
 
     // 日志记录（保持向后兼容）
-    void log(std::string content, LOG_LEVEL level = INFO, int line = 0);
+    void log(const std::string& content, fvm::interfaces::LogLevel level = fvm::interfaces::LogLevel::INFO, int line = 0) override;
 
     // 便捷方法
-    void info(const std::string& content);
-    void debug(const std::string& content, int line = 0);
-    void warning(const std::string& content, int line = 0);
-    void fatal(const std::string& content, int line = 0);
+    void info(const std::string& content) override;
+    void debug(const std::string& content, int line = 0) override;
+    void warning(const std::string& content, int line = 0) override;
+    void fatal(const std::string& content, int line = 0) override;
 
     // 获取最后的错误信息
-    const std::string& get_last_error() const;
+    const std::string& get_last_error() const override;
     const std::string& get_last_information() const;  // 兼容别名
 
-    void flush();
+    void flush() override;
 
     // 配置持久化支持（供 Config 类使用）
     std::string get_log_file() const { return log_file; }
-    LOG_LEVEL get_min_log_level() const { return min_log_level; }
+    fvm::interfaces::LogLevel get_min_log_level() const { return min_log_level; }
     int get_timezone_offset() const { return timezone_offset; }
     bool get_console_output() const { return enable_console_output; }
     bool get_file_rotation() const { return enable_file_rotation; }
@@ -146,7 +147,7 @@ void Logger::rotate_log_file() {
 
 Logger::Logger()
     : log_file("log.chm"),
-      min_log_level(INFO),
+      min_log_level(fvm::interfaces::LogLevel::INFO),
       timezone_offset(8),
       enable_console_output(true),
       enable_file_rotation(false),
@@ -164,10 +165,7 @@ Logger::~Logger() {
     }
 }
 
-Logger& Logger::get_logger() {
-    static Logger logger;
-    return logger;
-}
+// Singleton accessor removed - use dependency injection instead
 
 bool Logger::set_log_file(const std::string& file_path) {
     std::lock_guard<std::mutex> lock(log_mutex);
@@ -179,8 +177,8 @@ bool Logger::set_log_file(const std::string& file_path) {
     return log_stream.is_open();
 }
 
-bool Logger::set_min_log_level(LOG_LEVEL level) {
-    if (level < INFO || level > FATAL) {
+bool Logger::set_min_log_level(fvm::interfaces::LogLevel level) {
+    if (level < fvm::interfaces::LogLevel::INFO || level > fvm::interfaces::LogLevel::FATAL) {
         return false;
     }
     std::lock_guard<std::mutex> lock(log_mutex);
@@ -210,7 +208,7 @@ bool Logger::set_file_rotation(bool enable, size_t max_size, int max_files) {
     return true;
 }
 
-void Logger::log(std::string content, LOG_LEVEL level, int line) {
+void Logger::log(const std::string& content, fvm::interfaces::LogLevel level, int line) {
     // 级别过滤（无锁快速路径）
     if (level < min_log_level) {
         return;
@@ -220,21 +218,21 @@ void Logger::log(std::string content, LOG_LEVEL level, int line) {
     std::lock_guard<std::mutex> lock(log_mutex);
 
     // 保存错误信息用于外部访问
-    if (level == WARNING || level == FATAL) {
+    if (level == fvm::interfaces::LogLevel::WARNING || level == fvm::interfaces::LogLevel::FATAL) {
         last_error_message = content;
     }
 
     // 格式化日志消息
     std::string app_tm = "(" + get_time() + ") " + content;
 
-    if (level == INFO) {
+    if (level == fvm::interfaces::LogLevel::INFO) {
         log_stream << "level: INFO " << '\n' << app_tm << std::endl;
-    } else if (level == DEBUG) {
+    } else if (level == fvm::interfaces::LogLevel::DEBUG) {
         log_stream << "level: DEBUG " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
         if (enable_console_output) {
             std::cerr << "line: " << line << ' ' << app_tm << std::endl;
         }
-    } else if (level == WARNING) {
+    } else if (level == fvm::interfaces::LogLevel::WARNING) {
         log_stream << "level: WARNING " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
     } else {  // FATAL
         log_stream << "level: FATAL " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
@@ -253,19 +251,19 @@ void Logger::log(std::string content, LOG_LEVEL level, int line) {
 }
 
 void Logger::info(const std::string& content) {
-    log(content, INFO, 0);
+    log(content, fvm::interfaces::LogLevel::INFO, 0);
 }
 
 void Logger::debug(const std::string& content, int line) {
-    log(content, DEBUG, line);
+    log(content, fvm::interfaces::LogLevel::DEBUG, line);
 }
 
 void Logger::warning(const std::string& content, int line) {
-    log(content, WARNING, line);
+    log(content, fvm::interfaces::LogLevel::WARNING, line);
 }
 
 void Logger::fatal(const std::string& content, int line) {
-    log(content, FATAL, line);
+    log(content, fvm::interfaces::LogLevel::FATAL, line);
 }
 
 const std::string& Logger::get_last_error() const {
@@ -293,7 +291,7 @@ void Logger::set_log_file_direct(const std::string& file) {
     open_log_stream();
 }
 
-void Logger::set_min_log_level_direct(LOG_LEVEL level) {
+void Logger::set_min_log_level_direct(fvm::interfaces::LogLevel level) {
     std::lock_guard<std::mutex> lock(log_mutex);
     min_log_level = level;
 }

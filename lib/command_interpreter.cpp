@@ -11,6 +11,9 @@
 #ifndef COMMAND_INTERPRETER_CPP
 #define COMMAND_INTERPRETER_CPP
 
+#include "fvm/interfaces/ILogger.h"
+#include "fvm/interfaces/ICommandInterpreter.h"
+#include "fvm/repositories/ICommandRepository.h"
 #include "saver.cpp"
 #include "logger.cpp"
 #include <cstdio>
@@ -23,13 +26,11 @@
 
 #define NO_COMMAND 0x3f3f3f3fULL
 
-class CommandInterpreter {
+class CommandInterpreter : public fvm::interfaces::ICommandInterpreter {
     // 从identifier hash映射到pid
     std::map<unsigned long long, unsigned long long> mp;
-    // std::set<unsigned long long> pid_set;
-    Saver &saver;
-    Logger &logger;
-    std::string DATA_STORAGE_NAME = "CommandInterpreter::map_relation";
+    fvm::repositories::ICommandRepository& repository_;
+    fvm::interfaces::ILogger& logger_;
 
     static unsigned long long get_hash(std::string s);
     // bool pid_exist(unsigned long long pid);
@@ -39,13 +40,17 @@ class CommandInterpreter {
     bool load();
     bool save();
 public:
-    CommandInterpreter(Logger &logger, Saver &saver);
+    CommandInterpreter(fvm::interfaces::ILogger& logger,
+                       fvm::repositories::ICommandRepository& repository);
     ~CommandInterpreter();
+
     bool FIRST_START = false;
-    bool add_identifier(std::string identifier, unsigned long long pid);
-    bool delete_identifier(std::string identifier);
-    std::pair<unsigned long long, std::vector<std::string>> get_command();
-    bool clear_data();
+    bool add_identifier(const std::string& identifier, unsigned long long pid) override;
+    bool delete_identifier(const std::string& identifier) override;
+    std::pair<unsigned long long, std::vector<std::string>> get_command() override;
+    bool clear_data() override;
+
+    bool is_first_start() const override { return FIRST_START; }
 };
 
 
@@ -96,47 +101,20 @@ std::string CommandInterpreter::escape(char ch) {
 }
 
 bool CommandInterpreter::save() {
-    vvs data;
-    for (auto &it : mp) {
-        data.push_back(std::vector<std::string>());
-        data.back().push_back(std::to_string(it.first));
-        data.back().push_back(std::to_string(it.second));
-    }
-    return saver.save(DATA_STORAGE_NAME, data);
+    return repository_.save(mp);
 }
 
 bool CommandInterpreter::load() {
-    vvs data;
-    if (!saver.load(DATA_STORAGE_NAME, data)) return false;
-    mp.clear();
-    // pid_set.clear();
-    for (auto &pr : data) {
-        if (pr.size() != 2) {
-            logger.log("Command interpreter: The mapping should be a pair, and there are no pairs in the data. Please check whether the data is complete.", Logger::WARNING, __LINE__);
-            return false;
-        }
-        unsigned long long indntifier_hash = 0, pid = 0;
-        for (auto &ch : pr[0]) {
-            indntifier_hash = indntifier_hash * 10 + ch - '0';
-        }
-        for (auto &ch : pr[1]) {
-            pid = pid * 10 + ch - '0';
-        }
-        if (identifier_exist(indntifier_hash)) {
-            logger.log("Command interpreter: There are multiple identifiers in the data, please check whether the data is correct.", Logger::WARNING, __LINE__);
-            return false;
-        }
-        // if (pid_exist(pid)) {
-        //     logger.log("Command interpreter: There are multiple pids in the data, please check whether the data is correct.", Logger::WARNING, __LINE__);
-        // }
-        mp[indntifier_hash] = pid;
-        // pid_set.insert(pid);
+    bool result = repository_.load(mp);
+    if (mp.empty()) {
+        FIRST_START = true;
     }
-    return true;
+    return result;
 }
 
-CommandInterpreter::CommandInterpreter(Logger &logger, Saver &saver)
-    : logger(logger), saver(saver) {
+CommandInterpreter::CommandInterpreter(fvm::interfaces::ILogger& logger,
+                                     fvm::repositories::ICommandRepository& repository)
+    : repository_(repository), logger_(logger) {
     if (!load()) FIRST_START = true;
 }
 
@@ -144,25 +122,20 @@ CommandInterpreter::~CommandInterpreter() {
     save();
 }
 
-bool CommandInterpreter::add_identifier(std::string identifier, unsigned long long pid) {
+bool CommandInterpreter::add_identifier(const std::string& identifier, unsigned long long pid) {
     unsigned long long identifier_hash = get_hash(identifier);
     if (identifier_exist(identifier_hash)) {
-        logger.log("Identifier " + identifier + " already exists. Please delete the original to add a new one.", Logger::WARNING, __LINE__);
+        logger_.log("Identifier " + identifier + " already exists. Please delete the original to add a new one.", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
-    // if (pid_exist(pid)) {
-    //     logger.log("Pid " + std::to_string(pid) + " already exists. Please delete the original to add a new one.", Logger::WARNING, __LINE__);
-    //     return false;
-    // }
-    // pid_set.insert(pid);
     mp[identifier_hash] = pid;
     return true;
 }
 
-bool CommandInterpreter::delete_identifier(std::string identifier) {
+bool CommandInterpreter::delete_identifier(const std::string& identifier) {
     unsigned long long identifier_hash = get_hash(identifier);
     if (!identifier_exist(identifier_hash)) {
-        logger.log("Identifier " + identifier + " does not exist.", Logger::WARNING, __LINE__);
+        logger_.log("Identifier " + identifier + " does not exist.", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
     unsigned long long pid = mp[identifier_hash];
@@ -197,7 +170,7 @@ std::pair<unsigned long long, std::vector<std::string>> CommandInterpreter::get_
     }
     unsigned long long identifier_hash = get_hash(escaped_cmd.front());
     if (!identifier_exist(identifier_hash)) {
-        logger.log("Command not found: " + escaped_cmd.front(), Logger::WARNING, __LINE__);
+        logger_.log("Command not found: " + escaped_cmd.front(), fvm::interfaces::LogLevel::WARNING, __LINE__);
         return std::make_pair(NO_COMMAND, escaped_cmd);
     } else {
         escaped_cmd.erase(escaped_cmd.begin());
@@ -209,32 +182,6 @@ bool CommandInterpreter::clear_data() {
     mp.clear();
     // pid_set.clear();
     return true;
-}
-
-                        /* ===== test ===== */
-int test_command_interpreter() {
-// int main() {
-    Logger &logger = Logger::get_logger();
-    CommandInterpreter ci(logger, Saver::get_saver());
-    // ci.add_identifier("wovinibaba", 1423);
-    // ci.delete_identifier("wovinibaba");
-    // ci.add_identifier("wovinidx", 1423);
-    // ci.add_identifier("c ", 1323);
-    // ci.add_identifier("c1", 13444);
-    std::cout << "Done" << '\n';
-    // return 0;
-    while (true) {
-        auto t = ci.get_command();
-        if (t.first == NO_COMMAND) {
-            std::cout << logger.get_last_error() << '\n';
-        }
-        std::cout << t.first << '\n';
-        for (auto it : t.second) {
-            std::cout << it << ' ';
-        }
-        std::cout << '\n';
-    }
-    return 0;
 }
 
 #endif

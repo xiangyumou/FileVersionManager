@@ -11,6 +11,9 @@
 #ifndef TERMINAL_CPP
 #define TERMINAL_CPP
 
+#include "fvm/interfaces/ILogger.h"
+#include "fvm/interfaces/ITerminal.h"
+#include "fvm/interfaces/IFileSystem.h"
 #include "file_system.cpp"
 #include "command_interpreter.cpp"
 #include "logger.cpp"
@@ -22,10 +25,12 @@
 #include <algorithm>
 #include <fstream>
 
-class Terminal : private CommandInterpreter {
+class Terminal : private CommandInterpreter, public fvm::interfaces::ITerminal {
 private:
-   Logger &logger;
-   FileSystem file_system;
+   fvm::interfaces::ILogger& logger_;
+   fvm::interfaces::IFileSystem& file_system_;
+   fvm::repositories::ICommandRepository& command_repository_;
+   fvm::interfaces::IStringUtilities& string_utils_;
 
    enum PARA_TYPE {
       STR = 0, INT, ULL
@@ -64,28 +69,31 @@ private:
    bool initialize();
 
 public:
-   Terminal(Logger &logger, FileSystem &file_system);
+   Terminal(fvm::interfaces::ILogger& logger,
+            fvm::interfaces::IFileSystem& file_system,
+            fvm::repositories::ICommandRepository& command_repository,
+            fvm::interfaces::IStringUtilities& string_utils);
    int run();
 };
 
 bool Terminal::execute(unsigned long long pid, std::vector<std::string> parameter) {
    if (pid >= function_requirement.size()) {
-      logger.log("There is no program numbered " + std::to_string(pid) + ". Please check whether the configuration is correct.", Logger::WARNING, __LINE__);
+      logger_.log("There is no program numbered " + std::to_string(pid) + ". Please check whether the configuration is correct.", fvm::interfaces::LogLevel::WARNING, __LINE__);
       return false;
    }
    std::vector<PARA_TYPE> &fr = function_requirement[pid];
    if (parameter.size() < fr.size()) {
-      logger.log("Parameters are insufficient. " + std::to_string(fr.size()) + " parameters were required but only " + std::to_string(parameter.size()) + " were provided.", Logger::WARNING, __LINE__);
+      logger_.log("Parameters are insufficient. " + std::to_string(fr.size()) + " parameters were required but only " + std::to_string(parameter.size()) + " were provided.", fvm::interfaces::LogLevel::WARNING, __LINE__);
       return false;
    }
    for (int i = 0; i < fr.size(); i++) {
       if (fr[i] == INT || fr[i] == ULL) {
-         if (!Saver::is_all_digits(parameter[i])) {
-            logger.log("The " + std::to_string(i) + "th parameter must be an integer. Check the input.", Logger::WARNING, __LINE__);
+         if (!string_utils_.is_all_digits(parameter[i])) {
+            logger_.log("The " + std::to_string(i) + "th parameter must be an integer. Check the input.", fvm::interfaces::LogLevel::WARNING, __LINE__);
             return false;
          }
          if (fr[i] == INT && parameter[i].size() > 9) {
-            logger.log("The " + std::to_string(i) + "th argument has a maximum of 9. Check the output.", Logger::WARNING, __LINE__);
+            logger_.log("The " + std::to_string(i) + "th argument has a maximum of 9. Check the output.", fvm::interfaces::LogLevel::WARNING, __LINE__);
             return false;
          }
       }
@@ -107,8 +115,8 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
 
    switch (pid) {
       case 0: 
-      if (!add_identifier(parameter[0], Saver::str_to_ull(parameter[1]))) return false;
-      else std::cout << "An identifier was successfully added for program " << Saver::str_to_ull(parameter[1]) << "." << '\n';
+      if (!add_identifier(parameter[0], string_utils_.str_to_ull(parameter[1]))) return false;
+      else std::cout << "An identifier was successfully added for program " << string_utils_.str_to_ull(parameter[1]) << "." << '\n';
       break;
       case 1:
       if (!delete_identifier(parameter[0])) return false;
@@ -116,62 +124,62 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
       break;
 
       case 2:
-      if (!file_system.switch_version(Saver::str_to_ull(parameter[0]))) return false;
+      if (!file_system_.switch_version(string_utils_.str_to_ull(parameter[0]))) return false;
       else std::cout << "Switched to version " + parameter[0] << '\n';
       break;
 
       case 3:
-      if (!file_system.make_file(parameter[0])) return false;
+      if (!file_system_.make_file(parameter[0])) return false;
       break;
 
       case 4:
-      if (!file_system.make_dir(parameter[0])) return false;
+      if (!file_system_.make_dir(parameter[0])) return false;
       break;
 
       case 5:
-      if (!file_system.change_directory(parameter[0])) return false;
+      if (!file_system_.change_directory(parameter[0])) return false;
       break;
 
       case 6:
       for (auto &file_name : parameter) {
-         if (!file_system.remove_file(file_name)) {
-            std::cout << logger.get_last_error() << '\n';
+         if (!file_system_.remove_file(file_name)) {
+            std::cout << logger_.get_last_error() << '\n';
          }
       }
       break;
 
       case 7:
       for (auto &file_name : parameter) {
-         if (!file_system.remove_dir(file_name)) {
-            std::cout << logger.get_last_error() << '\n';
+         if (!file_system_.remove_dir(file_name)) {
+            std::cout << logger_.get_last_error() << '\n';
          }
       }
       break;
 
       case 8:
-      if (!file_system.update_name(parameter[0], parameter[1])) return false;
+      if (!file_system_.update_name(parameter[0], parameter[1])) return false;
       break;
 
       case 9:
-      if (!file_system.update_content(parameter[0], parameter[1])) return false;
+      if (!file_system_.update_content(parameter[0], parameter[1])) return false;
       break;
 
       case 10:
-      if (!file_system.get_content(parameter[0], get_content_content)) return false;
+      if (!file_system_.get_content(parameter[0], get_content_content)) return false;
       else std::cout << get_content_content << '\n';
       break;
 
       case 11:
-      if (!file_system.tree(tree_content)) return false;
+      if (!file_system_.tree(tree_content)) return false;
       std::cout << tree_content << '\n';
       break;
 
       case 12:
-      if (!file_system.goto_last_dir()) return false;
+      if (!file_system_.goto_last_dir()) return false;
       break;
 
       case 13:
-      if (!file_system.list_directory_contents(ls_content)) return false;
+      if (!file_system_.list_directory_contents(ls_content)) return false;
       if (ls_content.empty()) {
          std::cout << "The folder is empty.  QAQ" << '\n';
          break;
@@ -187,36 +195,36 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
       } else {
          std::cout << "type\t" << "create time\t\t" << "update time\t\t" << "name" << '\n';
          for (auto &content : ls_content) {
-            treeNode::TYPE type;
+            int type;
             std::string create_time, update_time;
-            if (!file_system.get_type(content, type)) return false;
-            if (!file_system.get_create_time(content, create_time)) return false;
-            if (!file_system.get_update_time(content, update_time)) return false;
-            std::cout << (type == treeNode::FILE ? "file" : "dir") << '\t' << create_time << '\t' << update_time << '\t' << content << '\n';
+            if (!file_system_.get_type(content, type)) return false;
+            if (!file_system_.get_create_time(content, create_time)) return false;
+            if (!file_system_.get_update_time(content, update_time)) return false;
+            std::cout << (type == 0 ? "file" : "dir") << '\t' << create_time << '\t' << update_time << '\t' << content << '\n';
          }
       }
       break;
 
       case 14:
       if (parameter.size() == 0) {
-         if (!file_system.create_version("")) return false;
+         if (!file_system_.create_version(0x3f3f3f3f, "")) return false;
       } else if (parameter.size() == 1) {
-         if (Saver::is_all_digits(parameter[0])) {
-            if (!file_system.create_version(Saver::str_to_ull(parameter[0]))) return false;
+         if (string_utils_.is_all_digits(parameter[0])) {
+            if (!file_system_.create_version(string_utils_.str_to_ull(parameter[0]), "")) return false;
          } else {
-            if (!file_system.create_version(parameter[0])) return false;
+            if (!file_system_.create_version(0x3f3f3f3f, parameter[0])) return false;
          }
       } else {
-         if (Saver::is_all_digits(parameter[0])) {
-            if (!file_system.create_version(Saver::str_to_ull(parameter[0]), parameter[1])) return false;
-         } else if (Saver::is_all_digits(parameter[1])) {
-            if (!file_system.create_version(parameter[0], Saver::str_to_ull(parameter[1]))) return false;
+         if (string_utils_.is_all_digits(parameter[0])) {
+            if (!file_system_.create_version(string_utils_.str_to_ull(parameter[0]), parameter[1])) return false;
+         } else if (string_utils_.is_all_digits(parameter[1])) {
+            if (!file_system_.create_version(string_utils_.str_to_ull(parameter[1]), parameter[0])) return false;
          }
       }
       break;
 
       case 15:
-      if (!file_system.version(version_content)) return false;
+      if (!file_system_.version(version_content)) return false;
       std::cout << "version id" << '\t' << "information" << '\n';
       for (auto &it : version_content) {
          std::cout << it.first << "\t\t" << (it.second.info == "" ? "NULL" : it.second.info) << '\n';
@@ -224,7 +232,7 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
       break;
 
       case 16:
-      std::cout << "The current version of the file system is " << file_system.get_current_version() << '\n';
+      std::cout << "The current version of the file system is " << file_system_.get_current_version() << '\n';
       break;
 
       case 17:
@@ -241,7 +249,7 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
       system(cmd.c_str());
       cmd = "touch -f " + file_name;
       system(cmd.c_str());
-      if (file_system.get_content(parameter[0], content)) {
+      if (file_system_.get_content(parameter[0], content)) {
          std::ofstream out(file_name);
          out << content;
          out.close();
@@ -257,12 +265,12 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
       in.close();
       cmd = "rm -f " + file_name;
       system(cmd.c_str());
-      file_system.make_file(parameter[0]);
-      if (!file_system.update_content(parameter[0], content)) return false;
+      file_system_.make_file(parameter[0]);
+      if (!file_system_.update_content(parameter[0], content)) return false;
       break;
 
       case 20:
-      if (!file_system.get_current_path(path)) return false;
+      if (!file_system_.get_current_path(path)) return false;
       std::cout << '/';
       for (auto &p : path) {
          std::cout << p << '/';
@@ -271,7 +279,7 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
       break;
 
       case 21:
-      if (!file_system.Find(parameter[0], res)) return false;
+      if (!file_system_.Find(parameter[0], res)) return false;
       std::cout << "name\t" << "path" << '\n';
       for (auto &r : res) {
          std::cout << r.first << '\t';
@@ -315,10 +323,15 @@ bool Terminal::initialize() {
    return true;
 }
 
-Terminal::Terminal(Logger &logger, FileSystem &file_system)
-    : CommandInterpreter(logger, Saver::get_saver()),
-      logger(logger),
-      file_system(file_system) {
+Terminal::Terminal(fvm::interfaces::ILogger& logger,
+                   fvm::interfaces::IFileSystem& file_system,
+                   fvm::repositories::ICommandRepository& command_repository,
+                   fvm::interfaces::IStringUtilities& string_utils)
+    : CommandInterpreter(logger, command_repository),
+      logger_(logger),
+      file_system_(file_system),
+      command_repository_(command_repository),
+      string_utils_(string_utils) {
    // add_identifier
    function_requirement.push_back(std::vector<PARA_TYPE>({STR, ULL}));
    // delete_identifier
@@ -380,24 +393,11 @@ int Terminal::run() {
          }
       } else {
          if (!execute(cmd.first, cmd.second)) {
-            std::cout << logger.get_last_error() << '\n';
+            std::cout << logger_.get_last_error() << '\n';
          }
       }
    }
    return 0;
-}
-
-int test_terminal() {
-// int main() {
-   Logger &logger = Logger::get_logger();
-   Saver &saver = Saver::get_saver();
-   FileManager &file_manager = FileManager::get_file_manager();
-   NodeManager &node_manager = NodeManager::get_node_manager();
-
-   VersionManager version_manager(logger, node_manager, saver);
-   FileSystem file_system(logger, node_manager, version_manager);
-   Terminal tm(logger, file_system);
-   return tm.run();
 }
 
 #endif

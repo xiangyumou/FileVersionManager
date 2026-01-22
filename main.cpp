@@ -1,38 +1,77 @@
+/**
+  ___ _                 _
+ / __| |__   __ _ _ __ | |_    /\/\   ___  ___
+/ /  | '_ \ / _` | '_ \| __|  /    \ / _ \/ _ \
+/ /___| | | | (_| | | | | |_  / /\  |  __|  __/
+\____/|_| |_|\__,_|_| |_|\__| \/  \/\___|\___|
+
+@ Author: Mu Xiangyu, Chant Mee
+*/
+
+#include "lib/logger.cpp"
+#include "lib/saver.cpp"
+#include "lib/encryptor.cpp"
+#include "lib/bs_tree.cpp"
+#include "lib/file_manager.cpp"
+#include "lib/node_manager.cpp"
+#include "lib/version_manager.cpp"
+#include "lib/file_system.cpp"
+#include "lib/command_interpreter.cpp"
 #include "lib/terminal.cpp"
-#include "lib/config.cpp"
+
+// Repository implementations
+#include "lib/repositories/saver_file_manager_repository.cpp"
+#include "lib/repositories/saver_node_manager_repository.cpp"
+#include "lib/repositories/saver_version_manager_repository.cpp"
+#include "lib/repositories/saver_command_repository.cpp"
+
+// Interface headers
+#include "fvm/interfaces/ILogger.h"
+#include "fvm/interfaces/ISaver.h"
+#include "fvm/interfaces/IFileManager.h"
+#include "fvm/interfaces/INodeManager.h"
+#include "fvm/interfaces/IVersionManager.h"
+#include "fvm/interfaces/IFileSystem.h"
+#include "fvm/interfaces/ITerminal.h"
+#include "fvm/interfaces/ICommandInterpreter.h"
+
+// Repository interfaces
+#include "fvm/repositories/IFileManagerRepository.h"
+#include "fvm/repositories/INodeManagerRepository.h"
+#include "fvm/repositories/IVersionManagerRepository.h"
+#include "fvm/repositories/ICommandRepository.h"
+
+using namespace fvm;
+using namespace fvm::interfaces;
+using namespace fvm::repositories;
 
 int main() {
-    // 使用单例访问器创建依赖图
-    Logger &logger = Logger::get_logger();
-    Saver &saver = Saver::get_saver();
-    FileManager &file_manager = FileManager::get_file_manager();
-    NodeManager &node_manager = NodeManager::get_node_manager();
+    // ===== Layer 1: Foundation Services =====
+    Logger logger;
+    Saver saver(logger);
 
-    // 加载全局配置
-    Config config;
-    std::vector<std::vector<std::string>> config_data;
-    if (saver.load(CONFIG_STORAGE_NAME, config_data)) {
-        if (config.deserialize(config_data)) {
-            // 应用加载的配置到各个模块
-            config.apply_to_logger(logger);
-            config.apply_to_saver(saver);
-        }
-    }
+    // ===== Layer 2: Repository Layer =====
+    // Repositories that don't depend on other managers
+    SaverFileManagerRepository file_manager_repo(saver, logger);
+    SaverVersionManagerRepository version_manager_repo(saver, logger);
+    SaverCommandRepository command_repo(saver, logger);
 
-    // 创建业务逻辑对象
-    VersionManager version_manager(logger, node_manager, saver);
+    // ===== Layer 3: Data Managers =====
+    // FileManager must come before NodeManager
+    FileManager file_manager(logger, file_manager_repo);
 
-    // 创建应用层对象
+    // SaverNodeManagerRepository depends on FileManager
+    SaverNodeManagerRepository node_manager_repo(saver, logger, file_manager);
+
+    NodeManager node_manager(logger, file_manager, node_manager_repo);
+    VersionManager version_manager(logger, node_manager, version_manager_repo);
+
+    // ===== Layer 4: Application Services =====
     FileSystem file_system(logger, node_manager, version_manager);
-    Terminal terminal(logger, file_system);
+    Terminal terminal(logger, file_system, command_repo, saver);
 
-    terminal.run();
+    // ===== Run Application =====
+    int result = terminal.run();
 
-    // 退出前保存配置
-    config.read_from_logger(logger);
-    config.read_from_saver(saver);
-    std::vector<std::vector<std::string>> config_to_save = config.serialize();
-    saver.save(CONFIG_STORAGE_NAME, config_to_save);
-
-    return 0;
+    return result;
 }
