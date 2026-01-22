@@ -103,10 +103,11 @@ bool NodeManager::node_exist(unsigned long long id) {
 }
 
 unsigned long long NodeManager::get_new_id() {
-    unsigned long long id = 1ULL * rand() * rand() * rand();
-    while (node_exist(id)) {
-        id = 1ULL * rand() * rand() * rand();
-    }
+    unsigned long long id;
+    do {
+        id = ((unsigned long long)rand() * RAND_MAX + rand()) % 1000000000ULL +
+             ((unsigned long long)rand() * RAND_MAX + rand()) % 1000000000ULL * 1000000000ULL;
+    } while (node_exist(id));
     return id;
 }
 
@@ -189,9 +190,11 @@ unsigned long long NodeManager::get_new_node(std::string name) {
 
 void NodeManager::delete_node(unsigned long long idx) {
     if (!node_exist(idx)) return;
-    if (--mp[idx].first == 0) {
+    if (mp[idx].first == 1) {
         file_manager.decrease_counter(mp[idx].second.fid);
         mp.erase(mp.find(idx));
+    } else {
+        mp[idx].first--;
     }
 }
 

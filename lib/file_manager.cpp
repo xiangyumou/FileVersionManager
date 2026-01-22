@@ -105,7 +105,7 @@ bool FileManager::load() {
             return false;
         }
         unsigned long long key = saver.str_to_ull(it[0]);
-        unsigned cnt = saver.str_to_ull(it[2]);
+        unsigned long long cnt = saver.str_to_ull(it[2]);
         std::string &content = it[1];
         auto t = std::make_pair(key, fileNode(content));
         t.second.cnt = cnt;
@@ -151,8 +151,10 @@ bool FileManager::decrease_counter(unsigned long long fid) {
         return false;
     }
     if (!check_file(fid)) return false;
-    if (--mp[fid].cnt <= 0) {
+    if (mp[fid].cnt == 1) {
         mp.erase(mp.find(fid));
+    } else {
+        mp[fid].cnt--;
     }
     return true;
 }

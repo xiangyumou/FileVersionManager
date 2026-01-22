@@ -69,6 +69,7 @@ bool VersionManager::load() {
     for (auto &node : node_information) {
         if (node.size() != 6) {
             logger.log("VersionManager: File is corrupted and cannot be read.", Logger::WARNING, __LINE__);
+            for (auto &ptr : label_to_ptr) delete ptr.second;
             return false;
         }
         s_label = node[0];
@@ -79,6 +80,7 @@ bool VersionManager::load() {
         s_first_son = node[5];
         if (!saver.is_all_digits(s_label) || !saver.is_all_digits(s_type) || !saver.is_all_digits(s_cnt) || !saver.is_all_digits(s_link) || !saver.is_all_digits(s_next_brother) || !saver.is_all_digits(s_first_son)) {
             logger.log("VersionManager: File is corrupted and cannot be read.", Logger::WARNING, __LINE__);
+            for (auto &ptr : label_to_ptr) delete ptr.second;
             return false;
         }
 
@@ -87,9 +89,10 @@ bool VersionManager::load() {
         type = saver.str_to_ull(s_type);
         cnt = saver.str_to_ull(s_cnt);
         link = saver.str_to_ull(s_link);
-        
+
         if (type >= 3) {
             logger.log("VersionManager: File is corrupted and cannot be read.", Logger::WARNING, __LINE__);
+            for (auto &ptr : label_to_ptr) delete ptr.second;
             return false;
         }
 
@@ -112,13 +115,15 @@ bool VersionManager::load() {
         label = saver.str_to_ull(s_label);
         next_brother = saver.str_to_ull(s_next_brother);
         first_son = saver.str_to_ull(s_first_son);
-        
+
         if (next_brother != NULL_NODE && !label_to_ptr.count(next_brother)) {
             logger.log("VersionManager: File is corrupted and cannot be read.", Logger::WARNING, __LINE__);
+            for (auto &ptr : label_to_ptr) delete ptr.second;
             return false;
         }
         if (first_son != NULL_NODE && !label_to_ptr.count(first_son)) {
             logger.log("VersionManager: File is corrupted and cannot be read.", Logger::WARNING, __LINE__);
+            for (auto &ptr : label_to_ptr) delete ptr.second;
             return false;
         }
 
@@ -131,6 +136,7 @@ bool VersionManager::load() {
     for (auto &ver : version_information) {
         if (ver.size() != 3) {
             logger.log("VersionManager: File is corrupted and cannot be read.", Logger::WARNING, __LINE__);
+            for (auto &ptr : label_to_ptr) delete ptr.second;
             return false;
         }
         s_version_id = ver[0];
@@ -138,6 +144,7 @@ bool VersionManager::load() {
         s_version_head_label = ver[2];
         if (!saver.is_all_digits(s_version_id) || !saver.is_all_digits(s_version_head_label)) {
             logger.log("VersionManager: File is corrupted and cannot be read.", Logger::WARNING, __LINE__);
+            for (auto &ptr : label_to_ptr) delete ptr.second;
             return false;
         }
         unsigned long long version_id, version_head_label;
@@ -146,6 +153,7 @@ bool VersionManager::load() {
 
         if (!label_to_ptr.count(version_head_label)) {
             version.clear();
+            for (auto &ptr : label_to_ptr) delete ptr.second;
             logger.log("VersionManager: File is corrupted and cannot be read.", Logger::WARNING, __LINE__);
             return false;
         }
@@ -153,7 +161,7 @@ bool VersionManager::load() {
         auto t = versionNode();
         t.info = version_info;
         t.p = label_to_ptr[version_head_label];
-        
+
         version[version_id] = t;
     }
 
@@ -280,20 +288,12 @@ bool VersionManager::create_version(unsigned long long model_version, std::strin
     }
     treeNode *new_version = new treeNode(treeNode::DIR);
     new_version->cnt = 0;
-    if (new_version == nullptr) {
-        logger.log("The system did not allocate memory for this operation.", Logger::FATAL, __LINE__);
+    new_version->link = node_manager.get_new_node("root");
+    treeNode *model = model_version == NO_MODEL_VERSION ? new_version : version[model_version].p;
+    if (!init_version(new_version, model)) {
+        delete new_version;
         return false;
     }
-    new_version->cnt = 0;
-    new_version->link = node_manager.get_new_node("root");
-    if (model_version != NO_MODEL_VERSION) {
-        if (new_version->first_son != nullptr) {
-            delete new_version->first_son;
-            new_version->first_son = nullptr;
-        }
-    }
-    treeNode *model = model_version == NO_MODEL_VERSION ? new_version : version[model_version].p;
-    if (!init_version(new_version, model)) return false;
     unsigned long long id = version.empty() ? 1001 : (*version.rbegin()).first + 1;
     version[id] = versionNode(version_info, new_version);
     return true;

@@ -235,11 +235,11 @@ void Saver::save_data(unsigned long long name_hash, unsigned long long data_hash
 
 int Saver::read(std::string &s) {
     int cur = 0, d = 0;
-    for (; !isdigit(s[cur]); cur++);
-    for (; isdigit(s[cur]); cur++) {
+    for (; cur < s.size() && !isdigit(s[cur]); cur++);
+    for (; cur < s.size() && isdigit(s[cur]); cur++) {
         d = d * 10 + s[cur] - '0';
     }
-    s.erase(s.begin(), s.begin() + cur + 1);
+    s.erase(s.begin(), s.begin() + std::min(cur + 1, (int)s.size()));
     return d;
 }
 
@@ -345,6 +345,7 @@ bool Saver::is_all_digits(std::string &s) {
 unsigned long long Saver::str_to_ull(std::string &s) {
     unsigned long long res = 0;
     for (auto &ch : s) {
+        if (res > ULLONG_MAX / 10) return 0;
         res = res * 10 + ch - '0';
     }
     return res;

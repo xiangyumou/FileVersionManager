@@ -568,7 +568,7 @@ FileSystem::FileSystem() {
 
 bool FileSystem::decrease_counter(treeNode *p) {
     if (!check_node(p, __LINE__)) return false;
-    if (--p->cnt == 0) {
+    if (p->cnt == 0 || --p->cnt == 0) {
         logger.log("Node " + node_manager.get_name(p->link) + " will be deleted...");
         node_manager.delete_node(p->link);
         delete p;
@@ -619,6 +619,7 @@ bool FileSystem::rebuild_nodes(treeNode *p) {
                     delete node;
                 }
             }
+            delete t;  // Clean up the newly allocated node
             return false;
         }
     }
@@ -627,7 +628,7 @@ bool FileSystem::rebuild_nodes(treeNode *p) {
     for (; !stk.empty(); stk.pop()) {
         path.push_back(stk.top());
     }
-    if (path.back() == nullptr) path.pop_back();
+    if (!path.empty() && path.back() == nullptr) path.pop_back();
     if (!check_path()) return false;
     return true;
 }
