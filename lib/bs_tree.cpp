@@ -43,8 +43,10 @@ struct treeNode {
 
 class BSTree {
 private:
-    Logger &logger = Logger::get_logger();
-    NodeManager &node_manager = NodeManager::get_node_manager();
+    Logger &logger;
+    NodeManager &node_manager;
+public:
+    BSTree(Logger &logger, NodeManager &node_manager);
 protected:
     /**
      * @brief 
@@ -249,6 +251,11 @@ treeNode::treeNode(TYPE type) {
 
 
                         /* ======= class BSTree ======= */
+
+BSTree::BSTree(Logger &logger, NodeManager &node_manager)
+    : logger(logger), node_manager(node_manager) {
+    path.clear();
+}
 
 bool BSTree::check_path() {
     if (path.empty()) {

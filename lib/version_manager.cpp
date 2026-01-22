@@ -31,9 +31,9 @@ struct versionNode {
 class VersionManager {
 private:
     std::map<unsigned long long, versionNode> version;
-    NodeManager &node_manager = NodeManager::get_node_manager();
-    Logger &logger = Logger::get_logger();
-    Saver &saver = Saver::get_saver();
+    NodeManager &node_manager;
+    Logger &logger;
+    Saver &saver;
     const unsigned long long NULL_NODE = 0x3f3f3f3f3f3fULL;
     std::string DATA_TREENODE_INFO = "VersionManager::DATA_TREENODE_INFO";
     std::string DATA_VERSION_INFO = "VersionManager::DATA_VERSION_INFO";
@@ -43,7 +43,7 @@ private:
     void dfs(treeNode *cur, std::map<treeNode *, unsigned long long> &label);
     bool recursive_increase_counter(treeNode *p, bool modify_brother=false);
 public:
-    VersionManager();
+    VersionManager(Logger &logger, NodeManager &node_manager, Saver &saver);
     ~VersionManager();
     bool init_version(treeNode *p, treeNode *vp);
     bool create_version(unsigned long long model_version=NO_MODEL_VERSION, std::string info="");
@@ -244,7 +244,8 @@ bool VersionManager::save() {
     return true;
 }
 
-VersionManager::VersionManager() {
+VersionManager::VersionManager(Logger &logger, NodeManager &node_manager, Saver &saver)
+    : logger(logger), node_manager(node_manager), saver(saver) {
     if (!load()) {
         logger.log("Failed to load existing version data. Creating new version.", Logger::WARNING, __LINE__);
         create_version();

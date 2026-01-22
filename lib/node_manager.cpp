@@ -27,7 +27,7 @@
  */
 class Node {
     private:
-        FileManager &file_manager = FileManager::get_file_manager();
+        FileManager &file_manager;
     public:
         std::string name;
         std::string create_time;
@@ -35,24 +35,24 @@ class Node {
         unsigned long long fid;
 
         std::string get_time();
-        Node();
-        Node(std::string name);
+        Node(FileManager &file_manager);
+        Node(FileManager &file_manager, std::string name);
         void update_update_time();
 };
 
 class NodeManager {
 private:
     std::map<unsigned long long, std::pair<unsigned long long, Node>> mp;
-    FileManager &file_manager = FileManager::get_file_manager();
+    FileManager &file_manager;
     std::string DATA_STORAGE_NAME = "NodeManager::map_relation";
-    Saver &saver = Saver::get_saver();
-    Logger &logger = Logger::get_logger();
+    Saver &saver;
+    Logger &logger;
 
     unsigned long long get_new_id();
     bool load();
     bool save();
 public:
-    NodeManager();
+    NodeManager(Logger &logger, FileManager &file_manager, Saver &saver);
     ~NodeManager();
     bool node_exist(unsigned long long id);
     unsigned long long get_new_node(std::string name);
@@ -82,9 +82,9 @@ std::string Node::get_time() {
     return std::string(t);
 }
 
-Node::Node() = default;
+Node::Node(FileManager &file_manager) : file_manager(file_manager) {}
 
-Node::Node(std::string name) {
+Node::Node(FileManager &file_manager, std::string name) : file_manager(file_manager) {
     this->name = name;
     this->create_time = get_time();
     this->update_time = get_time();
@@ -157,7 +157,7 @@ bool NodeManager::load() {
         std::string &name = it[2];
         std::string &create_time = it[3];
         std::string &update_time = it[4];
-        Node t_node = Node();
+        Node t_node = Node(file_manager);
         t_node.name = name;
         t_node.create_time = create_time;
         t_node.update_time = update_time;
@@ -168,7 +168,8 @@ bool NodeManager::load() {
     return true;
 }
 
-NodeManager::NodeManager() {
+NodeManager::NodeManager(Logger &logger, FileManager &file_manager, Saver &saver)
+    : file_manager(file_manager), saver(saver), logger(logger) {
     srand(time(NULL));
     if (!load()) return;
 }
@@ -181,20 +182,19 @@ NodeManager::~NodeManager() {
 
 unsigned long long NodeManager::get_new_node(std::string name) {
     unsigned long long new_id = get_new_id();
-    // std::pair<int, NodeManager::Node> q = std::make_pair(0, Node(name));
-    auto t = std::make_pair(1, Node(name));
-    // mp[new_id] = std::make_pair(1, Node(name));
+    auto t = std::make_pair(1, Node(file_manager, name));
     mp.insert(std::make_pair(new_id, t));
     return new_id;
 };
 
 void NodeManager::delete_node(unsigned long long idx) {
     if (!node_exist(idx)) return;
-    if (mp[idx].first == 1) {
-        file_manager.decrease_counter(mp[idx].second.fid);
-        mp.erase(mp.find(idx));
+    auto it = mp.find(idx);
+    if (it->second.first == 1) {
+        file_manager.decrease_counter(it->second.second.fid);
+        mp.erase(it);
     } else {
-        mp[idx].first--;
+        it->second.first--;
     }
 }
 
@@ -205,21 +205,24 @@ unsigned long long NodeManager::update_content(unsigned long long idx, std::stri
     delete_node(idx);
     idx = get_new_node(name);
 
-    unsigned long long fid = mp[idx].second.fid;
-    file_manager.update_content(mp[idx].second.fid, mp[idx].second.fid, content);
+    auto it = mp.find(idx);
+    unsigned long long fid = it->second.second.fid;
+    file_manager.update_content(it->second.second.fid, it->second.second.fid, content);
     return idx;
 }
 
 unsigned long long NodeManager::update_name(unsigned long long idx, std::string name) {
     if (!node_exist(idx)) return -1;
     std::string create_time = get_update_time(idx);
-    unsigned long long fid = mp[idx].second.fid;
+    auto it = mp.find(idx);
+    unsigned long long fid = it->second.second.fid;
     unsigned long long old_idx = idx;
     file_manager.increase_counter(fid);
     idx = get_new_node(name);
-    mp[idx].second.create_time = create_time;
-    file_manager.decrease_counter(mp[idx].second.fid);
-    mp[idx].second.fid = fid;
+    auto new_it = mp.find(idx);
+    new_it->second.second.create_time = create_time;
+    file_manager.decrease_counter(new_it->second.second.fid);
+    new_it->second.second.fid = fid;
     delete_node(old_idx);
     return idx;
 }
@@ -227,37 +230,41 @@ unsigned long long NodeManager::update_name(unsigned long long idx, std::string 
 std::string NodeManager::get_content(unsigned long long idx) {
     if (!node_exist(idx)) return "-1";
     std::string content;
-    file_manager.get_content(mp[idx].second.fid, content);
+    file_manager.get_content(mp.find(idx)->second.second.fid, content);
     return content;
 }
 
 std::string NodeManager::get_name(unsigned long long idx) {
     if (!node_exist(idx)) return "";
-    return mp[idx].second.name;
+    return mp.find(idx)->second.second.name;
 }
 
 std::string NodeManager::get_update_time(unsigned long long idx) {
     if (!node_exist(idx)) return "";
-    return mp[idx].second.update_time;
+    return mp.find(idx)->second.second.update_time;
 }
 
 std::string NodeManager::get_create_time(unsigned long long idx) {
     if (!node_exist(idx)) return "";
-    return mp[idx].second.create_time;
+    return mp.find(idx)->second.second.create_time;
 }
 
 void NodeManager::increase_counter(unsigned long long idx) {
     if (!node_exist(idx)) return;
-    mp[idx].first ++;
+    mp.find(idx)->second.first ++;
 }
 
 unsigned long long NodeManager::_get_counter(unsigned long long idx) {
     if (!node_exist(idx)) return -1;
-    return mp[idx].first;
+    return mp.find(idx)->second.first;
 }
 
 NodeManager& NodeManager::get_node_manager() {
-    static NodeManager node_manager;
+    static NodeManager node_manager(
+        Logger::get_logger(),
+        FileManager::get_file_manager(),
+        Saver::get_saver()
+    );
     return node_manager;
 }
 

@@ -31,9 +31,9 @@
  */
 class FileSystem : private BSTree {
 private:
+    Logger &logger;
+    NodeManager &node_manager;
     VersionManager version_manager;
-    Logger &logger = Logger::get_logger();
-    NodeManager &node_manager = NodeManager::get_node_manager();
     unsigned long long CURRENT_VERSION = 0;
 
     /**
@@ -165,7 +165,7 @@ private:
     bool kmp(std::string str, std::string tar);
 
 public:
-    FileSystem();
+    FileSystem(Logger &logger, NodeManager &node_manager, VersionManager &version_manager);
 
     /**
      * @brief
@@ -557,7 +557,11 @@ public:
 
                         /* ======= class FileSystem ======= */
 
-FileSystem::FileSystem() {
+FileSystem::FileSystem(Logger &logger, NodeManager &node_manager, VersionManager &version_manager)
+    : BSTree(logger, node_manager),
+      logger(logger),
+      node_manager(node_manager),
+      version_manager(version_manager) {
     if (version_manager.empty()) {
         version_manager.create_version();
     }

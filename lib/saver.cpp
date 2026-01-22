@@ -71,7 +71,7 @@ private:
      */
     std::map<unsigned long long, dataNode> mp;
 
-    Logger &logger = Logger::get_logger();
+    Logger &logger;
 
     /**
      * @brief Get the hash object
@@ -125,7 +125,7 @@ private:
     int read(std::string &s);
 
 public:
-    Saver();
+    Saver(Logger &logger = Logger::get_logger());
     
     /**
      * 保存的格式：
@@ -243,7 +243,7 @@ int Saver::read(std::string &s) {
     return d;
 }
 
-Saver::Saver() {
+Saver::Saver(Logger &logger) : logger(logger) {
     load_file();
 }
 
@@ -352,7 +352,7 @@ unsigned long long Saver::str_to_ull(std::string &s) {
 }
 
 Saver& Saver::get_saver() {
-    static Saver saver;
+    static Saver saver(Logger::get_logger());
     return saver;
 }
 

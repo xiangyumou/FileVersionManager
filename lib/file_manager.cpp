@@ -29,8 +29,8 @@ class FileManager {
 private:
     std::string DATA_STORAGE_NAME = "FileManager::map_relation";
     std::map<unsigned long long, fileNode> mp;
-    Saver &saver = Saver::get_saver();
-    Logger &logger = Logger::get_logger();
+    Saver &saver;
+    Logger &logger;
 
     unsigned long long get_new_id();
     bool file_exist(unsigned long long fid);
@@ -39,7 +39,7 @@ private:
     bool load();
 
 public:
-    FileManager();
+    FileManager(Logger &logger, Saver &saver);
     ~FileManager();
     static FileManager& get_file_manager();
     unsigned long long create_file(std::string content="");
@@ -114,7 +114,8 @@ bool FileManager::load() {
     return true;
 }
 
-FileManager::FileManager() {
+FileManager::FileManager(Logger &logger, Saver &saver)
+    : logger(logger), saver(saver) {
     if (!load()) return;
 }
 
@@ -125,7 +126,7 @@ FileManager::~FileManager() {
 }
 
 FileManager& FileManager::get_file_manager() {
-    static FileManager file_manager;
+    static FileManager file_manager(Logger::get_logger(), Saver::get_saver());
     return file_manager;
 }
 
@@ -177,7 +178,7 @@ bool FileManager::get_content(unsigned long long fid, std::string &content) {
 int test_file_manager() {
 // int main() {
     Logger &logger = Logger::get_logger();
-    FileManager fm;
+    FileManager fm(logger, Saver::get_saver());
     unsigned long long id = fm.create_file("123123123");
     if (!fm.increase_counter(id)) std::cout << logger.get_last_error() << '\n';
     unsigned long long id1;

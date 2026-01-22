@@ -27,8 +27,8 @@ class CommandInterpreter {
     // 从identifier hash映射到pid
     std::map<unsigned long long, unsigned long long> mp;
     // std::set<unsigned long long> pid_set;
-    Saver &saver = Saver::get_saver();
-    Logger &logger = Logger::get_logger();
+    Saver &saver;
+    Logger &logger;
     std::string DATA_STORAGE_NAME = "CommandInterpreter::map_relation";
 
     static unsigned long long get_hash(std::string s);
@@ -39,7 +39,7 @@ class CommandInterpreter {
     bool load();
     bool save();
 public:
-    CommandInterpreter();
+    CommandInterpreter(Logger &logger, Saver &saver);
     ~CommandInterpreter();
     bool FIRST_START = false;
     bool add_identifier(std::string identifier, unsigned long long pid);
@@ -135,7 +135,8 @@ bool CommandInterpreter::load() {
     return true;
 }
 
-CommandInterpreter::CommandInterpreter() {
+CommandInterpreter::CommandInterpreter(Logger &logger, Saver &saver)
+    : logger(logger), saver(saver) {
     if (!load()) FIRST_START = true;
 }
 
@@ -214,7 +215,7 @@ bool CommandInterpreter::clear_data() {
 int test_command_interpreter() {
 // int main() {
     Logger &logger = Logger::get_logger();
-    CommandInterpreter ci;
+    CommandInterpreter ci(logger, Saver::get_saver());
     // ci.add_identifier("wovinibaba", 1423);
     // ci.delete_identifier("wovinibaba");
     // ci.add_identifier("wovinidx", 1423);

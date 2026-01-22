@@ -24,8 +24,8 @@
 
 class Terminal : private CommandInterpreter {
 private:
+   Logger &logger;
    FileSystem file_system;
-   Logger &logger = Logger::get_logger();
 
    enum PARA_TYPE {
       STR = 0, INT, ULL
@@ -64,7 +64,7 @@ private:
    bool initialize();
 
 public:
-   Terminal();
+   Terminal(Logger &logger, FileSystem &file_system);
    int run();
 };
 
@@ -315,7 +315,10 @@ bool Terminal::initialize() {
    return true;
 }
 
-Terminal::Terminal() {
+Terminal::Terminal(Logger &logger, FileSystem &file_system)
+    : CommandInterpreter(logger, Saver::get_saver()),
+      logger(logger),
+      file_system(file_system) {
    // add_identifier
    function_requirement.push_back(std::vector<PARA_TYPE>({STR, ULL}));
    // delete_identifier
@@ -386,7 +389,14 @@ int Terminal::run() {
 
 int test_terminal() {
 // int main() {
-   Terminal tm;
+   Logger &logger = Logger::get_logger();
+   Saver &saver = Saver::get_saver();
+   FileManager &file_manager = FileManager::get_file_manager();
+   NodeManager &node_manager = NodeManager::get_node_manager();
+
+   VersionManager version_manager(logger, node_manager, saver);
+   FileSystem file_system(logger, node_manager, version_manager);
+   Terminal tm(logger, file_system);
    return tm.run();
 }
 
