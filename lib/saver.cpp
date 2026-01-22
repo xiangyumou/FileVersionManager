@@ -12,7 +12,8 @@
 #define SAVER_CPP
 
 #include "logger.cpp"
-#include "encryptor.cpp"
+#include "fvm/encryptor.h"
+#include "fvm/interfaces/IEncryptor.h"
 #include "fvm/interfaces/ISaver.h"
 #include "fvm/interfaces/ILogger.h"
 #include "fvm/interfaces/IFileOperations.h"
@@ -46,8 +47,10 @@ struct WalEntry {
  * of the data, the length of the encrypted data, and the encrypted data.
  *
  * It should be noted that the len here is not the actual length of the data, but the
- * actual length/N, where N is the length of a data block. (This concept is proposed in
- * the encryptor class)
+ * actual length/N, where N is the length of a data block.
+ *
+ * Note: len is calculated as data.size() / block_size, where block_size is the
+ * Encryptor's block size (N).
  */
 struct dataNode {
     unsigned long long name_hash, data_hash;
@@ -55,27 +58,28 @@ struct dataNode {
     std::vector<std::pair<double, double>> data;
 
     dataNode();
-    dataNode(unsigned long long name_hash, unsigned long long data_hash, std::vector<std::pair<double, double>> &data);
+    dataNode(unsigned long long name_hash, unsigned long long data_hash,
+             std::vector<std::pair<double, double>> &data, int block_size);
 };
 
 /**
- * @brief 
+ * @brief
  * This class realizes the preservation of data.
- * This class inherits the Encryptor class and re-encapsulates the functions in it.
- * 
- * There is a data type "vvs" in this class, you can simply think of it as a 
- * two-dimensional array storing strings, but this array is implemented with a vector.
- * 
- * The prototype of "vvs" is std::vector<std::vector<std::string>>. I believe that 
- * most of the time this data structure can store any type of data, even if it cannot 
+ *
+ * There is a data type "vvs" in this class, you can simply think of it as a
+ * two-dimensional array storing strings, but this array is implemented with a
+ * vector.
+ *
+ * The prototype of "vvs" is std::vector<std::vector<std::string>>. I believe that
+ * most of the time this data structure can store any type of data, even if it cannot
  * be directly stored in this structure, it can be stored through a certain deformation.
- * 
- * The functional design of this class is very interesting. It achieves such a function. 
- * The user provides a vvs where he has stored the data and the name of the data. After 
- * that, if the user wants this set of data, he only needs to provide the name of the 
+ *
+ * The functional design of this class is very interesting. It achieves such a function.
+ * The user provides a vvs where he has stored the data and the name of the data. After
+ * that, if the user wants this set of data, he only needs to provide the name of the
  * data, and the user can get a copy that is exactly the same as when he stored it.
  */
-class Saver : private Encryptor, public fvm::interfaces::ISaver {
+class Saver : public fvm::interfaces::ISaver {
 private:
     /**
      * @brief
@@ -91,6 +95,13 @@ private:
     std::map<unsigned long long, dataNode> mp;
 
     fvm::interfaces::ILogger& logger_;
+
+    /**
+     * @brief
+     * Encryptor for data encryption/decryption (for testability).
+     */
+    fvm::interfaces::IEncryptor* encryptor_;
+    bool owns_encryptor_;  // True if we created the default implementation
 
     /**
      * @brief
@@ -188,13 +199,18 @@ private:
     bool atomic_write(const std::string& filename, const std::string& content);
 
 public:
-    Saver(fvm::interfaces::ILogger& logger, fvm::interfaces::IFileOperations* file_ops = nullptr);
+    Saver(fvm::interfaces::ILogger& logger,
+          fvm::interfaces::IEncryptor* encryptor = nullptr,
+          fvm::interfaces::IFileOperations* file_ops = nullptr);
 
     /**
      * 保存的格式：
      * name_hash data_hash len 后面跟len对浮点数
     */
     ~Saver();
+
+    // Encryptor injection (for testability)
+    void set_encryptor(fvm::interfaces::IEncryptor* encryptor);
 
     // File operations injection (for testability)
     void set_file_operations(fvm::interfaces::IFileOperations* file_ops) override;
@@ -241,13 +257,14 @@ public:
                         /* ======= struct dataNode ======= */
 dataNode::dataNode() = default;
 
-dataNode::dataNode(     unsigned long long name_hash, 
-                        unsigned long long data_hash, 
-                        std::vector<std::pair<double, double>> &data) 
+dataNode::dataNode(unsigned long long name_hash,
+                   unsigned long long data_hash,
+                   std::vector<std::pair<double, double>> &data,
+                   int block_size)
 {
     this->name_hash = name_hash;
     this->data_hash = data_hash;
-    this->len = data.size() / Encryptor::N;
+    this->len = data.size() / block_size;
     this->data = data;
 }
 
@@ -263,11 +280,26 @@ unsigned long long Saver::get_hash(T &s) {
 }
 
 bool Saver::load_file() {
-    std::ifstream in(data_file);
-    if (!in.good()) {
-        logger_.log("load_file: No data file.", fvm::interfaces::LogLevel::WARNING, __LINE__);
-        return false;
+    std::ifstream* in_ptr = nullptr;
+    bool using_file_ops = false;
+
+    if (file_ops_) {
+        in_ptr = file_ops_->get_input_stream(data_file, std::ios::in);
+        if (!in_ptr) {
+            logger_.log("load_file: No data file.", fvm::interfaces::LogLevel::WARNING, __LINE__);
+            return false;
+        }
+        using_file_ops = true;
+    } else {
+        in_ptr = new std::ifstream(data_file);
+        if (!in_ptr->good()) {
+            logger_.log("load_file: No data file.", fvm::interfaces::LogLevel::WARNING, __LINE__);
+            delete in_ptr;
+            return false;
+        }
     }
+
+    std::ifstream& in = *in_ptr;
     mp.clear();
     unsigned long long name_hash, data_hash, len;
     std::vector<std::pair<double, double>> data;
@@ -277,6 +309,12 @@ bool Saver::load_file() {
             if (in.eof()) break;  // Normal end of file
             mp.clear();
             logger_.log("Failed to read name_hash. File may be corrupted.", fvm::interfaces::LogLevel::WARNING, __LINE__);
+            if (using_file_ops) {
+                file_ops_->close_input_stream(in_ptr);
+            } else {
+                in.close();
+                delete in_ptr;
+            }
             return false;
         }
 
@@ -284,6 +322,12 @@ bool Saver::load_file() {
         if (!(in >> data_hash)) {
             mp.clear();
             logger_.log("Failed to read data_hash. File may be corrupted.", fvm::interfaces::LogLevel::WARNING, __LINE__);
+            if (using_file_ops) {
+                file_ops_->close_input_stream(in_ptr);
+            } else {
+                in.close();
+                delete in_ptr;
+            }
             return false;
         }
 
@@ -291,20 +335,39 @@ bool Saver::load_file() {
         if (!(in >> len)) {
             mp.clear();
             logger_.log("Failed to read data length. File may be corrupted.", fvm::interfaces::LogLevel::WARNING, __LINE__);
+            if (using_file_ops) {
+                file_ops_->close_input_stream(in_ptr);
+            } else {
+                in.close();
+                delete in_ptr;
+            }
             return false;
         }
 
         data.clear();
-        for (int i = 0; i < len * N; i++) {
+        for (int i = 0; i < len * encryptor_->get_block_size(); i++) {
             double a, b;
             if (!(in >> a >> b)) {
                 mp.clear();
                 logger_.log("Failed to read data pair. File may be corrupted.", fvm::interfaces::LogLevel::WARNING, __LINE__);
+                if (using_file_ops) {
+                    file_ops_->close_input_stream(in_ptr);
+                } else {
+                    in.close();
+                    delete in_ptr;
+                }
                 return false;
             }
             data.push_back(std::make_pair(a, b));
         }
         save_data(name_hash, data_hash, data);
+    }
+
+    if (using_file_ops) {
+        file_ops_->close_input_stream(in_ptr);
+    } else {
+        in.close();
+        delete in_ptr;
     }
     return true;
 }
@@ -320,14 +383,14 @@ void Saver::save_data(unsigned long long name_hash, unsigned long long data_hash
     if (existed) {
         mp.erase(mp.find(name_hash));
     }
-    mp[name_hash] = dataNode(name_hash, data_hash, data);
+    mp[name_hash] = dataNode(name_hash, data_hash, data, encryptor_->get_block_size());
 
     // Write to WAL for incremental persistence
     WalEntry entry;
     entry.op = existed ? WalEntry::UPDATE : WalEntry::INSERT;
     entry.name_hash = name_hash;
     entry.data_hash = data_hash;
-    entry.len = data.size() / N;
+    entry.len = data.size() / encryptor_->get_block_size();
     entry.data = data;
 
     flush_wal(entry);
@@ -343,8 +406,16 @@ int Saver::read(std::string &s) {
     return d;
 }
 
-Saver::Saver(fvm::interfaces::ILogger& logger, fvm::interfaces::IFileOperations* file_ops)
-    : logger_(logger), file_ops_(file_ops), owns_file_ops_(false) {
+Saver::Saver(fvm::interfaces::ILogger& logger,
+             fvm::interfaces::IEncryptor* encryptor,
+             fvm::interfaces::IFileOperations* file_ops)
+    : logger_(logger), encryptor_(encryptor), owns_encryptor_(false),
+      file_ops_(file_ops), owns_file_ops_(false) {
+    // Create default encryptor if not provided
+    if (!encryptor_) {
+        encryptor_ = new Encryptor();
+        owns_encryptor_ = true;
+    }
     // Constructor no longer loads data - use initialize() instead
 }
 
@@ -354,9 +425,20 @@ Saver::Saver(fvm::interfaces::ILogger& logger, fvm::interfaces::IFileOperations*
 */
 Saver::~Saver() {
     // Destructor no longer saves data - use shutdown() instead
+    if (owns_encryptor_ && encryptor_) {
+        delete encryptor_;
+    }
     if (owns_file_ops_ && file_ops_) {
         delete file_ops_;
     }
+}
+
+void Saver::set_encryptor(fvm::interfaces::IEncryptor* encryptor) {
+    if (owns_encryptor_ && encryptor_) {
+        delete encryptor_;
+    }
+    encryptor_ = encryptor;
+    owns_encryptor_ = false;
 }
 
 void Saver::set_file_operations(fvm::interfaces::IFileOperations* file_ops) {
@@ -410,7 +492,7 @@ bool Saver::save(const std::string& name, std::vector<std::vector<std::string>>&
         sequence.push_back(static_cast<int>(static_cast<unsigned char>(it)));
     }
     std::vector<std::pair<double, double>> res;
-    encrypt_sequence(sequence, res);
+    encryptor_->encrypt_sequence(sequence, res);
     unsigned long long name_hash = get_hash(name);
     unsigned long long data_hash = get_hash(data);
     save_data(name_hash, data_hash, res);
@@ -425,7 +507,7 @@ bool Saver::load(const std::string& name, std::vector<std::vector<std::string>>&
     }
     dataNode &data = mp[name_hash];
     std::vector<int> sequence;
-    decrypt_sequence(data.data, sequence);
+    encryptor_->decrypt_sequence(data.data, sequence);
     if (get_hash(sequence) != data.data_hash) {
         logger_.log("Data failed to pass integrity verification.", fvm::interfaces::LogLevel::WARNING, __LINE__);
         if (!mandatory_access) return false;
@@ -580,12 +662,26 @@ bool Saver::flush_wal(const WalEntry& entry) {
 bool Saver::load_from_wal() {
     if (!enable_wal) return true;
 
-    std::ifstream in(wal_file);
-    if (!in.good()) {
-        // WAL file doesn't exist yet, that's ok
-        return false;
+    std::ifstream* in_ptr = nullptr;
+    bool using_file_ops = false;
+
+    if (file_ops_) {
+        in_ptr = file_ops_->get_input_stream(wal_file, std::ios::in);
+        if (!in_ptr) {
+            // WAL file doesn't exist yet, that's ok
+            return false;
+        }
+        using_file_ops = true;
+    } else {
+        in_ptr = new std::ifstream(wal_file);
+        if (!in_ptr->good()) {
+            // WAL file doesn't exist yet, that's ok
+            delete in_ptr;
+            return false;
+        }
     }
 
+    std::ifstream& in = *in_ptr;
     std::string line;
     int op_type;
     unsigned long long name_hash, data_hash;
@@ -602,7 +698,7 @@ bool Saver::load_from_wal() {
         }
 
         data.clear();
-        for (int i = 0; i < len * N; i++) {
+        for (int i = 0; i < len * encryptor_->get_block_size(); i++) {
             double a, b;
             if (!(iss >> a >> b)) {
                 logger_.log("load_from_wal: Invalid WAL data pair", fvm::interfaces::LogLevel::WARNING, __LINE__);
@@ -616,7 +712,7 @@ bool Saver::load_from_wal() {
         switch (op) {
             case WalEntry::INSERT:
             case WalEntry::UPDATE:
-                mp[name_hash] = dataNode(name_hash, data_hash, data);
+                mp[name_hash] = dataNode(name_hash, data_hash, data, encryptor_->get_block_size());
                 break;
             case WalEntry::DELETE:
                 mp.erase(name_hash);
@@ -626,12 +722,21 @@ bool Saver::load_from_wal() {
         wal_entry_count++;
     }
 
-    in.close();
+    if (using_file_ops) {
+        file_ops_->close_input_stream(in_ptr);
+    } else {
+        in.close();
+        delete in_ptr;
+    }
 
     // After replaying WAL, clear it and reset count
     if (wal_entry_count > 0) {
-        std::ofstream out(wal_file, std::ios::trunc);
-        out.close();
+        if (file_ops_) {
+            file_ops_->write_file(wal_file, "");
+        } else {
+            std::ofstream out(wal_file, std::ios::trunc);
+            out.close();
+        }
         wal_entry_count = 0;
     }
 

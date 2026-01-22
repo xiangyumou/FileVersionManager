@@ -14,6 +14,7 @@
 #include "fvm/interfaces/ILogger.h"
 #include "fvm/interfaces/IFileManager.h"
 #include "fvm/interfaces/INodeManager.h"
+#include "fvm/interfaces/ISystemClock.h"
 #include "fvm/repositories/INodeManagerRepository.h"
 #include "file_manager.cpp"
 #include "saver.cpp"
@@ -32,6 +33,7 @@
 class Node {
 private:
     fvm::interfaces::IFileManager* file_manager_;  // Changed to pointer for move semantics
+    fvm::interfaces::ISystemClock* clock_;  // System clock for time generation
 public:
     std::string name;
     std::string create_time;
@@ -39,8 +41,8 @@ public:
     unsigned long long fid;
 
     std::string get_time();
-    Node(fvm::interfaces::IFileManager* file_manager);
-    Node(fvm::interfaces::IFileManager* file_manager, std::string name);
+    Node(fvm::interfaces::IFileManager* file_manager, fvm::interfaces::ISystemClock* clock = nullptr);
+    Node(fvm::interfaces::IFileManager* file_manager, std::string name, fvm::interfaces::ISystemClock* clock = nullptr);
     void update_update_time();
 };
 
@@ -50,6 +52,7 @@ private:
     fvm::interfaces::IFileManager& file_manager_;
     fvm::repositories::INodeManagerRepository& repository_;
     fvm::interfaces::ILogger& logger_;
+    fvm::interfaces::ISystemClock* clock_;  // System clock for time generation
 
     unsigned long long get_new_id();
     bool load();
@@ -59,6 +62,9 @@ public:
                 fvm::interfaces::IFileManager& file_manager,
                 fvm::repositories::INodeManagerRepository& repository);
     ~NodeManager();
+
+    // System clock injection (for testability)
+    void set_system_clock(fvm::interfaces::ISystemClock* clock) override;
 
     // Lifecycle management (for testability)
     bool initialize() override;  // Load data from repository
@@ -84,6 +90,10 @@ public:
                         /* ======= class Node ======= */
 
 std::string Node::get_time() {
+    if (clock_) {
+        return clock_->get_current_time(8);  // UTC+8 for China timezone
+    }
+    // Fallback to direct system calls if no clock is set
     static char t[100];
     time_t timep;
     time(&timep);
@@ -92,9 +102,11 @@ std::string Node::get_time() {
     return std::string(t);
 }
 
-Node::Node(fvm::interfaces::IFileManager* file_manager) : file_manager_(file_manager) {}
+Node::Node(fvm::interfaces::IFileManager* file_manager, fvm::interfaces::ISystemClock* clock)
+    : file_manager_(file_manager), clock_(clock) {}
 
-Node::Node(fvm::interfaces::IFileManager* file_manager, std::string name) : file_manager_(file_manager) {
+Node::Node(fvm::interfaces::IFileManager* file_manager, std::string name, fvm::interfaces::ISystemClock* clock)
+    : file_manager_(file_manager), clock_(clock) {
     this->name = name;
     this->create_time = get_time();
     this->update_time = get_time();
@@ -132,13 +144,17 @@ bool NodeManager::load() {
 NodeManager::NodeManager(fvm::interfaces::ILogger& logger,
                          fvm::interfaces::IFileManager& file_manager,
                          fvm::repositories::INodeManagerRepository& repository)
-    : file_manager_(file_manager), repository_(repository), logger_(logger) {
+    : file_manager_(file_manager), repository_(repository), logger_(logger), clock_(nullptr) {
     srand(time(NULL));
     // Constructor no longer loads data - use initialize() instead
 }
 
 NodeManager::~NodeManager() {
     // Destructor no longer saves data - use shutdown() instead
+}
+
+void NodeManager::set_system_clock(fvm::interfaces::ISystemClock* clock) {
+    clock_ = clock;
 }
 
 bool NodeManager::initialize() {
@@ -153,7 +169,7 @@ bool NodeManager::shutdown() {
 
 unsigned long long NodeManager::get_new_node(const std::string& name) {
     unsigned long long new_id = get_new_id();
-    auto t = std::make_pair(1, Node(&file_manager_, name));
+    auto t = std::make_pair(1, Node(&file_manager_, name, clock_));
     mp.insert(std::make_pair(new_id, t));
     return new_id;
 };

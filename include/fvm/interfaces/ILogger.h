@@ -6,8 +6,9 @@
 namespace fvm {
 namespace interfaces {
 
-// Forward declaration
+// Forward declarations
 class IFileOperations;
+class ISystemClock;
 
 enum class LogLevel {
     INFO = 0,
@@ -22,6 +23,9 @@ public:
 
     // File operations injection (for testability)
     virtual void set_file_operations(IFileOperations* file_ops) = 0;
+
+    // System clock injection (for testability)
+    virtual void set_system_clock(ISystemClock* clock) = 0;
 
     // Configuration methods
     virtual bool set_log_file(const std::string& file_path) = 0;

@@ -94,6 +94,23 @@ public:
             delete stream;
         }
     }
+
+    std::ifstream* get_input_stream(const std::string& filepath,
+                                    std::ios_base::openmode mode) override {
+        std::ifstream* stream = new std::ifstream(filepath, mode);
+        if (!stream->is_open()) {
+            delete stream;
+            return nullptr;
+        }
+        return stream;
+    }
+
+    void close_input_stream(std::ifstream* stream) override {
+        if (stream) {
+            stream->close();
+            delete stream;
+        }
+    }
 };
 
 } // namespace core

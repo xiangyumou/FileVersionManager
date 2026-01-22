@@ -7,9 +7,15 @@
 namespace fvm {
 namespace interfaces {
 
+// Forward declaration
+class ISystemClock;
+
 class INodeManager {
 public:
     virtual ~INodeManager() = default;
+
+    // System clock injection (for testability)
+    virtual void set_system_clock(ISystemClock* clock) = 0;
 
     // Lifecycle management (for testability)
     virtual bool initialize() = 0;  // Load data from repository

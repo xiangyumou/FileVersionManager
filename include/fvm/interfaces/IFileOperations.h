@@ -12,7 +12,7 @@
 #define FVM_INTERFACES_IFILEOPERATIONS_H
 
 #include <string>
-#include <iosfwd>
+#include <ios>
 
 namespace fvm {
 namespace interfaces {
@@ -72,6 +72,18 @@ public:
      * @brief Close a stream obtained from get_output_stream()
      */
     virtual void close_stream(std::ofstream* stream) = 0;
+
+    /**
+     * @brief Get input stream for a file (for Saver)
+     * Caller is responsible for calling close_input_stream()
+     */
+    virtual std::ifstream* get_input_stream(const std::string& filepath,
+                                           std::ios_base::openmode mode) = 0;
+
+    /**
+     * @brief Close an input stream obtained from get_input_stream()
+     */
+    virtual void close_input_stream(std::ifstream* stream) = 0;
 };
 
 } // namespace interfaces
