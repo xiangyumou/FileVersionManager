@@ -119,7 +119,9 @@ FileManager::FileManager() {
 }
 
 FileManager::~FileManager() {
-    save();
+    if (!save()) {
+        std::cerr << "FATAL: Failed to save file manager data in destructor!" << std::endl;
+    }
 }
 
 FileManager& FileManager::get_file_manager() {

@@ -173,7 +173,9 @@ NodeManager::NodeManager() {
 }
 
 NodeManager::~NodeManager() {
-    if (!save()) return;
+    if (!save()) {
+        std::cerr << "FATAL: Failed to save node manager data in destructor!" << std::endl;
+    }
 }
 
 unsigned long long NodeManager::get_new_node(std::string name) {

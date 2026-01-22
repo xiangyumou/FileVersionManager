@@ -610,7 +610,17 @@ bool FileSystem::rebuild_nodes(treeNode *p) {
         else t->next_brother = stk.top();
         relation = is_son();
         stk.push(t);
-        if (!decrease_counter(path.back())) return false;
+        if (!decrease_counter(path.back())) {
+            // Clean up all nodes in stk
+            while (!stk.empty()) {
+                treeNode *node = stk.top();
+                stk.pop();
+                if (node != p) {
+                    delete node;
+                }
+            }
+            return false;
+        }
     }
     if (!check_node(path.back(), __LINE__)) return false;
     (relation ? path.back()->first_son : path.back()->next_brother) = stk.top();
@@ -655,9 +665,8 @@ bool FileSystem::travel_tree(treeNode *p, std::string &tree_info) {
 
 bool FileSystem::kmp(std::string str, std::string tar) {
     static const int MAX_NAME_LEN = 1000;
-    if (str.size() > MAX_NAME_LEN || tar.size() > MAX_NAME_LEN) return false;
-    int next[1000];
-    memset(next, 0, sizeof next);
+    if (str.size() >= MAX_NAME_LEN || tar.size() >= MAX_NAME_LEN) return false;
+    std::vector<int> next(tar.size());
     for (int i = 0, j = -1; i < tar.size(); i++) {
         while (j >= 0 && tar[j + 1] != tar[i]) {
             j = next[j];
@@ -729,7 +738,10 @@ bool FileSystem::make_file(std::string name) {
     if (!goto_tail()) return false;
     treeNode *t = new treeNode(treeNode::FILE);
     t->link = node_manager.get_new_node(name);
-    if (!rebuild_nodes(t)) return false;
+    if (!rebuild_nodes(t)) {
+        delete t;
+        return false;
+    }
     return true;
 }
 
@@ -745,7 +757,10 @@ bool FileSystem::make_dir(std::string name) {
         return false;
     }
     t->link = node_manager.get_new_node(name);
-    if (!rebuild_nodes(t)) return false;
+    if (!rebuild_nodes(t)) {
+        delete t;
+        return false;
+    }
     return true;
 }
 
@@ -830,7 +845,10 @@ bool FileSystem::update_content(std::string name, std::string content) {
     t->cnt = 1;
     t->link = node_manager.update_content(t->link, content);
     path.pop_back();
-    if (!rebuild_nodes(t)) return false;
+    if (!rebuild_nodes(t)) {
+        delete t;
+        return false;
+    }
     if (!decrease_counter(back)) return false;
     return true;
 }

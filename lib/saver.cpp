@@ -183,17 +183,37 @@ bool Saver::load_file() {
     mp.clear();
     unsigned long long name_hash, data_hash, len;
     std::vector<std::pair<double, double>> data;
-    while (in >> name_hash) {
-        data.clear();
-        in >> data_hash >> len;
-        if (in.eof()) {
+    while (true) {
+        // Check if we can read name_hash
+        if (!(in >> name_hash)) {
+            if (in.eof()) break;  // Normal end of file
             mp.clear();
-            logger.log("Read interrupted, please check data integrity.", Logger::WARNING, __LINE__);
+            logger.log("Failed to read name_hash. File may be corrupted.", Logger::WARNING, __LINE__);
             return false;
         }
+
+        // Check if we can read data_hash
+        if (!(in >> data_hash)) {
+            mp.clear();
+            logger.log("Failed to read data_hash. File may be corrupted.", Logger::WARNING, __LINE__);
+            return false;
+        }
+
+        // Check if we can read len
+        if (!(in >> len)) {
+            mp.clear();
+            logger.log("Failed to read data length. File may be corrupted.", Logger::WARNING, __LINE__);
+            return false;
+        }
+
+        data.clear();
         for (int i = 0; i < len * N; i++) {
             double a, b;
-            in >> a >> b;
+            if (!(in >> a >> b)) {
+                mp.clear();
+                logger.log("Failed to read data pair. File may be corrupted.", Logger::WARNING, __LINE__);
+                return false;
+            }
             data.push_back(std::make_pair(a, b));
         }
         save_data(name_hash, data_hash, data);

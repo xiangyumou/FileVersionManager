@@ -244,7 +244,10 @@ VersionManager::VersionManager() {
 }
 
 VersionManager::~VersionManager() {
-    if (!save()) return;
+    if (!save()) {
+        std::cerr << "FATAL: Failed to save version data in destructor!" << std::endl;
+        std::cerr << "Data may have been lost." << std::endl;
+    }
 }
 
 bool VersionManager::recursive_increase_counter(treeNode *p, bool modify_brother) {
@@ -283,7 +286,12 @@ bool VersionManager::create_version(unsigned long long model_version, std::strin
     }
     new_version->cnt = 0;
     new_version->link = node_manager.get_new_node("root");
-    if (model_version != NO_MODEL_VERSION) delete new_version->first_son;
+    if (model_version != NO_MODEL_VERSION) {
+        if (new_version->first_son != nullptr) {
+            delete new_version->first_son;
+            new_version->first_son = nullptr;
+        }
+    }
     treeNode *model = model_version == NO_MODEL_VERSION ? new_version : version[model_version].p;
     if (!init_version(new_version, model)) return false;
     unsigned long long id = version.empty() ? 1001 : (*version.rbegin()).first + 1;
