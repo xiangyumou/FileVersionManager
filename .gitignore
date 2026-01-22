@@ -1,2 +1,6 @@
 main
 *.chm
+*.o
+*.wal
+ffvms
+.DS_Store
