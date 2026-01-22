@@ -225,7 +225,7 @@ int test_command_interpreter() {
     while (true) {
         auto t = ci.get_command();
         if (t.first == NO_COMMAND) {
-            std::cout << *logger.information << '\n';
+            std::cout << logger.get_last_error() << '\n';
         }
         std::cout << t.first << '\n';
         for (auto it : t.second) {

@@ -1,11 +1,11 @@
 /**
-   ___ _                 _                      
-  / __| |__   __ _ _ __ | |_    /\/\   ___  ___ 
+   ___ _                 _
+  / __| |__   __ _ _ __ | |_    /\/\   ___  ___
  / /  | '_ \ / _` | '_ \| __|  /    \ / _ \/ _ \
 / /___| | | | (_| | | | | |_  / /\/\ |  __|  __/
 \____/|_| |_|\__,_|_| |_|\__| \/    \/\___|\___|
 
-@ Author: Mu Xiangyu, Chant Mee 
+@ Author: Mu Xiangyu, Chant Mee
 */
 
 #ifndef LOGGER_CPP
@@ -15,95 +15,136 @@
 #include <string>
 #include <fstream>
 #include <iostream>
-
-#define ll Logger::get_logger().log("===== 11111 =====", Logger::DEBUG, __LINE__);
-#define rr Logger::get_logger().log("===== 22222 =====", Logger::DEBUG, __LINE__);
-#define wa Logger::get_logger().log("===== WARN =====", Logger::DEBUG, __LINE__);
+#include <mutex>
+#include <cstdio>
 
 class Logger {
-private:
-    // Set the log file name here
-    std::string log_file = "log.chm";
-
-    // Gets the current time as a string
-    std::string get_time();
-
 public:
-    Logger();
-
-    /**
-     * Unless there is no other processing method, the User-oriented and 
-     * developer-oriented functions in the program only returns true or false 
-     * to indicate whether the requested operation is successfully executed.
-     * 
-     * If the execution is successful and the function has a return value, 
-     * then the return value will be stored in this variable; if it is not 
-     * successfully executed, the reason for not being successfully executed 
-     * will be stored in this variable.
-    */
-    std::string *information;
-
-    /**
-     * This function can be used in multiple places to obtain a logger.
-     * Log management is implemented by the Logger class. 
-     * You only need to correctly mark the log level of the information that 
-     * needs to be recorded and the line number where the information is 
-     * located when necessary, and output it through the log function.
-    */
-    static Logger& get_logger();
-
-    /**
-    * An explanation of the four types of log registration:
-    * INFO: 
-    * Normal logs are used to record what operations the program has performed.
-    * At this level, logs are only printed to log files and not to the console.
-    * 
-    * DEBUG: 
-    * This level is mainly used when debugging programs.
-    * Using this level will output information to the console using cerr.
-    * 
-    * WARNING:
-    * This level is used when the user does something wrong.
-    * For example, if the user tries to access a folder that does not exist, the
-    * function will only return false, because it is printed this way.
-    * To find out exactly what happened, you can use the logger's "information" variable.
-    * 
-    * FATAL:
-    * This level records information that may cause the program to crash.
-    * At this level, information will be forced to be output to the console 
-    * through cerr and the log level will be marked.
-    * Due to the limited level of the author, errors of this level are 
-    * almost never caught. QAQ
-    */
     enum LOG_LEVEL {
         INFO = 0, DEBUG, WARNING, FATAL
     };
 
-    /**
-     * Use this function to record logs. 
-     * "content" is the content to be recorded, and "level" is the log level. 
-     * For a detailed introduction to "level", please see above.
-     * If you use a log level other than INFO, you must provide the line 
-     * number where the log function is called, that is, __LINE__.
-    */
-    void log(std::string content, LOG_LEVEL level=INFO, int line=__LINE__);
+private:
+    // 配置
+    std::string log_file;
+    LOG_LEVEL min_log_level;
+    int timezone_offset;
+    bool enable_console_output;
+    bool enable_file_rotation;
+    size_t max_file_size;
+    int max_rotation_files;
+
+    // 运行时状态
+    std::ofstream log_stream;
+    std::string last_error_message;
+    mutable std::mutex log_mutex;
+
+    // 内部方法
+    std::string get_time() const;
+    void rotate_log_file();
+    void open_log_stream();
+
+    // 禁止拷贝和赋值
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+
+public:
+    Logger();
+    ~Logger();
+
+    static Logger& get_logger();
+
+    // 配置接口
+    bool set_log_file(const std::string& file_path);
+    bool set_min_log_level(LOG_LEVEL level);
+    bool set_timezone_offset(int offset_hours);
+    bool set_console_output(bool enable);
+    bool set_file_rotation(bool enable, size_t max_size = 10*1024*1024, int max_files = 5);
+
+    // 日志记录（保持向后兼容）
+    void log(std::string content, LOG_LEVEL level = INFO, int line = 0);
+
+    // 便捷方法
+    void info(const std::string& content);
+    void debug(const std::string& content, int line = 0);
+    void warning(const std::string& content, int line = 0);
+    void fatal(const std::string& content, int line = 0);
+
+    // 获取最后的错误信息
+    const std::string& get_last_error() const;
+    const std::string& get_last_information() const;  // 兼容别名
+
+    void flush();
 };
 
 
 
                         /* ======= class Logger ======= */
 
-std::string Logger::get_time() {
+std::string Logger::get_time() const {
     static char t[100];
     time_t timep;
     time(&timep);
     struct tm* p = gmtime(&timep);
-    snprintf(t, sizeof(t), "%d-%02d-%02d %02d:%02d:%02d", 1900 + p->tm_year, 1 + p->tm_mon, p->tm_mday, 8 + p->tm_hour, p->tm_min, p->tm_sec);
+    snprintf(t, sizeof(t), "%d-%02d-%02d %02d:%02d:%02d",
+             1900 + p->tm_year, 1 + p->tm_mon, p->tm_mday,
+             timezone_offset + p->tm_hour, p->tm_min, p->tm_sec);
     return std::string(t);
 }
 
-Logger::Logger() {
-    information = new std::string();
+void Logger::open_log_stream() {
+    if (log_stream.is_open()) {
+        log_stream.close();
+    }
+    log_stream.open(log_file, std::ios_base::app);
+    if (!log_stream.is_open()) {
+        std::cerr << "Failed to open log file: " << log_file << std::endl;
+    }
+}
+
+void Logger::rotate_log_file() {
+    if (!log_stream.is_open()) return;
+
+    // 关闭当前文件
+    log_stream.close();
+
+    // 删除最老的文件
+    std::string oldest_file = log_file + "." + std::to_string(max_rotation_files);
+    std::remove(oldest_file.c_str());
+
+    // 重命名现有文件: log.chm.N -> log.chm.(N+1)
+    for (int i = max_rotation_files - 1; i >= 1; i--) {
+        std::string old_name = log_file + "." + std::to_string(i);
+        std::string new_name = log_file + "." + std::to_string(i + 1);
+        std::rename(old_name.c_str(), new_name.c_str());
+    }
+
+    // 当前文件 -> log.chm.1
+    std::string rotated_name = log_file + ".1";
+    std::rename(log_file.c_str(), rotated_name.c_str());
+
+    // 重新打开新文件
+    open_log_stream();
+}
+
+Logger::Logger()
+    : log_file("log.chm"),
+      min_log_level(INFO),
+      timezone_offset(8),
+      enable_console_output(true),
+      enable_file_rotation(false),
+      max_file_size(10 * 1024 * 1024),
+      max_rotation_files(5),
+      last_error_message("")
+{
+    open_log_stream();
+}
+
+Logger::~Logger() {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    if (log_stream.is_open()) {
+        log_stream.close();
+    }
 }
 
 Logger& Logger::get_logger() {
@@ -111,20 +152,117 @@ Logger& Logger::get_logger() {
     return logger;
 }
 
+bool Logger::set_log_file(const std::string& file_path) {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    if (log_stream.is_open()) {
+        log_stream.close();
+    }
+    log_file = file_path;
+    open_log_stream();
+    return log_stream.is_open();
+}
+
+bool Logger::set_min_log_level(LOG_LEVEL level) {
+    if (level < INFO || level > FATAL) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(log_mutex);
+    min_log_level = level;
+    return true;
+}
+
+bool Logger::set_timezone_offset(int offset_hours) {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    timezone_offset = offset_hours;
+    return true;
+}
+
+bool Logger::set_console_output(bool enable) {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    enable_console_output = enable;
+    return true;
+}
+
+bool Logger::set_file_rotation(bool enable, size_t max_size, int max_files) {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    enable_file_rotation = enable;
+    if (enable) {
+        max_file_size = max_size > 0 ? max_size : 10 * 1024 * 1024;
+        max_rotation_files = max_files > 0 ? max_files : 5;
+    }
+    return true;
+}
+
 void Logger::log(std::string content, LOG_LEVEL level, int line) {
-    static std::ofstream out(log_file, std::ios_base::app);
-    *information = std::string(' ' + content);
-    std::string app_tm = "(" + get_time() + ")" + *information;
+    // 级别过滤（无锁快速路径）
+    if (level < min_log_level) {
+        return;
+    }
+
+    // 加锁保护日志写入
+    std::lock_guard<std::mutex> lock(log_mutex);
+
+    // 保存错误信息用于外部访问
+    if (level == WARNING || level == FATAL) {
+        last_error_message = content;
+    }
+
+    // 格式化日志消息
+    std::string app_tm = "(" + get_time() + ") " + content;
+
     if (level == INFO) {
-        out << "level: INFO " << '\n' << app_tm << std::endl;
+        log_stream << "level: INFO " << '\n' << app_tm << std::endl;
     } else if (level == DEBUG) {
-        out << "level: DEBUG " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
-        std::cerr << "line: " << line << ' ' << app_tm << std::endl;
+        log_stream << "level: DEBUG " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
+        if (enable_console_output) {
+            std::cerr << "line: " << line << ' ' << app_tm << std::endl;
+        }
     } else if (level == WARNING) {
-        out << "level: WARNING " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
-    } else {
-        out << "level: FATAL " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
-        std::cerr << "level: FATAL " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
+        log_stream << "level: WARNING " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
+    } else {  // FATAL
+        log_stream << "level: FATAL " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
+        if (enable_console_output) {
+            std::cerr << "level: FATAL " << '\n' << "line: " << line << ' ' << app_tm << std::endl;
+        }
+    }
+
+    // 检查文件轮转
+    if (enable_file_rotation && log_stream.is_open()) {
+        std::streampos current_pos = log_stream.tellp();
+        if (current_pos >= 0 && static_cast<size_t>(current_pos) >= max_file_size) {
+            rotate_log_file();
+        }
+    }
+}
+
+void Logger::info(const std::string& content) {
+    log(content, INFO, 0);
+}
+
+void Logger::debug(const std::string& content, int line) {
+    log(content, DEBUG, line);
+}
+
+void Logger::warning(const std::string& content, int line) {
+    log(content, WARNING, line);
+}
+
+void Logger::fatal(const std::string& content, int line) {
+    log(content, FATAL, line);
+}
+
+const std::string& Logger::get_last_error() const {
+    return last_error_message;
+}
+
+const std::string& Logger::get_last_information() const {
+    return last_error_message;
+}
+
+void Logger::flush() {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    if (log_stream.is_open()) {
+        log_stream << std::flush;
     }
 }
 

@@ -135,7 +135,7 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
       case 6:
       for (auto &file_name : parameter) {
          if (!file_system.remove_file(file_name)) {
-            std::cout << *logger.information << '\n';
+            std::cout << logger.get_last_error() << '\n';
          }
       }
       break;
@@ -143,7 +143,7 @@ bool Terminal::execute(unsigned long long pid, std::vector<std::string> paramete
       case 7:
       for (auto &file_name : parameter) {
          if (!file_system.remove_dir(file_name)) {
-            std::cout << *logger.information << '\n';
+            std::cout << logger.get_last_error() << '\n';
          }
       }
       break;
@@ -377,7 +377,7 @@ int Terminal::run() {
          }
       } else {
          if (!execute(cmd.first, cmd.second)) {
-            std::cout << *logger.information << '\n';
+            std::cout << logger.get_last_error() << '\n';
          }
       }
    }

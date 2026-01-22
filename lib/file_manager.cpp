@@ -179,14 +179,14 @@ int test_file_manager() {
     Logger &logger = Logger::get_logger();
     FileManager fm;
     unsigned long long id = fm.create_file("123123123");
-    if (!fm.increase_counter(id)) std::cout << *logger.information << '\n';
+    if (!fm.increase_counter(id)) std::cout << logger.get_last_error() << '\n';
     unsigned long long id1;
     fm.update_content(id, id1, "hahaha");
     fm.update_content(id, id1, "hahaha");
     std::string content;
-    if (!fm.get_content(id, content)) std::cout << *logger.information << '\n';
+    if (!fm.get_content(id, content)) std::cout << logger.get_last_error() << '\n';
     std::cout << content << '\n';
-    if (!fm.get_content(id1, content)) std::cout << *logger.information << '\n';
+    if (!fm.get_content(id1, content)) std::cout << logger.get_last_error() << '\n';
     std::cout << content << '\n';
     return 0;
 }

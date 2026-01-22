@@ -71,7 +71,7 @@ private:
      */
     std::map<unsigned long long, dataNode> mp;
 
-    Logger logger = Logger::get_logger();
+    Logger &logger = Logger::get_logger();
 
     /**
      * @brief Get the hash object
