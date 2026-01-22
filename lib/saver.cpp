@@ -206,6 +206,16 @@ public:
     size_t get_wal_size() const;         // Get current WAL entry count
     bool set_auto_compact(size_t threshold);  // Set auto-compact threshold
     bool set_wal_enabled(bool enabled);  // Enable/disable WAL
+
+    // 配置持久化支持（供 Config 类使用）
+    std::string get_data_file() const { return data_file; }
+    std::string get_wal_file() const { return wal_file; }
+    bool get_wal_enabled() const { return enable_wal; }
+    size_t get_auto_compact_threshold() const { return auto_compact_threshold; }
+
+    // 直接设置配置值（用于 Config::apply_to_saver）
+    void set_wal_enabled_direct(bool enabled) { enable_wal = enabled; }
+    void set_auto_compact_threshold_direct(size_t threshold) { auto_compact_threshold = threshold; }
 };
 
 
