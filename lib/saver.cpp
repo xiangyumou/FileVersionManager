@@ -17,12 +17,17 @@
 #include "fvm/interfaces/ISaver.h"
 #include "fvm/interfaces/ILogger.h"
 #include "fvm/interfaces/IFileOperations.h"
+#include "fvm/saver_constants.h"
+#include "fvm/data_serializer.h"
+#include "fvm/wal_manager.h"
+#include "fvm/storage_manager.h"
 #include <cctype>
 #include <vector>
 #include <string>
 #include <sstream>
 #include <map>
 #include <fstream>
+#include <memory>
 
 typedef std::vector<std::vector<std::string>> vvs;
 
@@ -85,12 +90,15 @@ private:
      * @brief
      * The file name of the stored data is set here.
      */
-    std::string data_file = "data.chm";
+    std::string data_file = fvm::DEFAULT_DATA_FILE;
 
     /**
      * @brief
      *  Here, the hash value of the data name provided by the user is used as the primary
      *  key to map a data structure.
+     *
+     *  DEPRECATED: Now handled by StorageManager.
+     *  Kept for backward compatibility during transition.
      */
     std::map<unsigned long long, dataNode> mp;
 
@@ -113,11 +121,23 @@ private:
     /**
      * @brief
      * WAL (Write-Ahead Log) for incremental persistence.
+     *
+     * DEPRECATED: Now handled by WalManager.
+     * Kept for backward compatibility during transition.
      */
-    std::string wal_file = "data.wal";
+    std::string wal_file = fvm::DEFAULT_WAL_FILE;
     size_t wal_entry_count = 0;
-    size_t auto_compact_threshold = 100;  // Auto-compact after this many WAL entries
+    size_t auto_compact_threshold = fvm::DEFAULT_WAL_COMPACT_THRESHOLD;  // Auto-compact after this many WAL entries
     bool enable_wal = true;
+
+    /**
+     * @brief
+     * New component-based architecture members.
+     * These replace the old monolithic implementation.
+     */
+    std::unique_ptr<fvm::DataSerializer> serializer_;
+    std::unique_ptr<fvm::WalManager> wal_manager_;
+    std::unique_ptr<fvm::StorageManager> storage_manager_;
 
     /**
      * @brief Get the hash object
@@ -204,8 +224,8 @@ public:
           fvm::interfaces::IFileOperations* file_ops = nullptr);
 
     /**
-     * 保存的格式：
-     * name_hash data_hash len 后面跟len对浮点数
+     * Storage format:
+     * name_hash data_hash len followed by len pairs of floating point numbers
     */
     ~Saver();
 
@@ -220,12 +240,12 @@ public:
     bool shutdown() override;    // Save data to files
 
     /**
-     * data字符串的格式:
-     * 数据块的个数
-     * 每个数据块中数据的个数
-     * 数据的长度
-     * 数据的字符表示
-     * 每个单元之间都用空格隔开
+     * Data string format:
+     * - Number of data blocks
+     * - Number of data items in each data block
+     * - Length of each data item
+     * - String representation of data
+     * All elements separated by spaces
     */
     bool save(const std::string& name, std::vector<std::vector<std::string>>& content) override;
     bool load(const std::string& name, std::vector<std::vector<std::string>>& content, bool mandatory_access = false) override;
@@ -241,15 +261,15 @@ public:
     bool set_auto_compact(size_t threshold) override;  // Set auto-compact threshold
     bool set_wal_enabled(bool enabled) override;  // Enable/disable WAL
 
-    // 配置持久化支持（供 Config 类使用）
+    // Configuration persistence support (for Config class)
     std::string get_data_file() const override { return data_file; }
     std::string get_wal_file() const override { return wal_file; }
-    bool get_wal_enabled() const override { return enable_wal; }
-    size_t get_auto_compact_threshold() const override { return auto_compact_threshold; }
+    bool get_wal_enabled() const override { return wal_manager_->is_enabled(); }
+    size_t get_auto_compact_threshold() const override { return wal_manager_->get_auto_compact_threshold(); }
 
-    // 直接设置配置值（用于 Config::apply_to_saver）
-    void set_wal_enabled_direct(bool enabled) override { enable_wal = enabled; }
-    void set_auto_compact_threshold_direct(size_t threshold) override { auto_compact_threshold = threshold; }
+    // Direct setting of configuration values (for Config::apply_to_saver)
+    void set_wal_enabled_direct(bool enabled) override { wal_manager_->set_enabled(enabled); }
+    void set_auto_compact_threshold_direct(size_t threshold) override { wal_manager_->set_auto_compact_threshold(threshold); }
 };
 
 
@@ -272,7 +292,7 @@ dataNode::dataNode(unsigned long long name_hash,
                         /* ======= class Saver ======= */
 template <class T>
 unsigned long long Saver::get_hash(T &s) {
-    unsigned long long seed = 13331, hash = 0;
+    unsigned long long seed = fvm::DEFAULT_HASH_SEED, hash = 0;
     for (auto &ch : s) {
         hash = hash * seed + ch;
     }
@@ -373,9 +393,10 @@ bool Saver::load_file() {
 }
 
 /**
- * 在map中的存储方式
- * 以name_hash作为主键，会检索出一个dataNode，里面包括了name_hash, data_hash, len, data.
- * 其中 len为data的pair的对数 / N
+ * Storage format in map:
+ * Uses name_hash as primary key to retrieve a dataNode,
+ * which includes name_hash, data_hash, len, data.
+ * Note: len is the count of data pairs divided by N (block size)
 */
 void Saver::save_data(unsigned long long name_hash, unsigned long long data_hash, std::vector<std::pair<double, double>> data) {
     bool existed = mp.count(name_hash);
@@ -416,12 +437,18 @@ Saver::Saver(fvm::interfaces::ILogger& logger,
         encryptor_ = new Encryptor();
         owns_encryptor_ = true;
     }
+
+    // Create new component instances
+    serializer_ = std::make_unique<fvm::DataSerializer>();
+    wal_manager_ = std::make_unique<fvm::WalManager>(wal_file, logger_, file_ops_);
+    storage_manager_ = std::make_unique<fvm::StorageManager>(logger_, file_ops_);
+
     // Constructor no longer loads data - use initialize() instead
 }
 
 /**
- * 保存的格式：
- * name_hash data_hash len 后面跟len对浮点数
+ * Storage format:
+ * name_hash data_hash len followed by len pairs of floating point numbers
 */
 Saver::~Saver() {
     // Destructor no longer saves data - use shutdown() instead
@@ -450,13 +477,27 @@ void Saver::set_file_operations(fvm::interfaces::IFileOperations* file_ops) {
 }
 
 bool Saver::initialize() {
-    // Load data from files
-    if (!load_file()) {
+    // Load data from files using StorageManager
+    if (!storage_manager_->load_from_file(data_file, encryptor_->get_block_size())) {
         logger_.log("initialize: No data file found (this is ok for first run)", fvm::interfaces::LogLevel::INFO, __LINE__);
     }
-    if (!load_from_wal()) {
+
+    // Load and replay WAL entries
+    if (!wal_manager_->load_and_replay([this](const fvm::interfaces::WalEntry& entry) {
+        // Replay callback: apply WAL entry to storage
+        switch (entry.op) {
+            case fvm::interfaces::WalOperation::INSERT:
+            case fvm::interfaces::WalOperation::UPDATE:
+                storage_manager_->store(entry.name_hash, entry.data_hash, entry.data, entry.len);
+                break;
+            case fvm::interfaces::WalOperation::DELETE:
+                storage_manager_->remove(entry.name_hash);
+                break;
+        }
+    })) {
         logger_.log("initialize: No WAL file found (this is ok for first run)", fvm::interfaces::LogLevel::INFO, __LINE__);
     }
+
     return true;
 }
 
@@ -474,71 +515,68 @@ bool Saver::shutdown() {
  * 每个单元之间都用空格隔开
 */
 bool Saver::save(const std::string& name, std::vector<std::vector<std::string>>& content) {
-    // Optimized serialization using stringstream (O(n) instead of O(n²))
-    std::ostringstream oss;
-
-    oss << content.size();
-    for (const auto& data_block : content) {
-        oss << ' ' << data_block.size();
-        for (const auto& dt : data_block) {
-            oss << ' ' << dt.size() << ' ' << dt;
-        }
-    }
-
-    std::string data = oss.str();
+    // Use DataSerializer for optimized serialization
     std::vector<int> sequence;
-    sequence.reserve(data.size());  // Pre-allocate
-    for (auto &it : data) {
-        sequence.push_back(static_cast<int>(static_cast<unsigned char>(it)));
+    if (!serializer_->serialize(content, sequence)) {
+        logger_.log("save: Failed to serialize content", fvm::interfaces::LogLevel::WARNING, __LINE__);
+        return false;
     }
+
+    // Encrypt the serialized data
     std::vector<std::pair<double, double>> res;
     encryptor_->encrypt_sequence(sequence, res);
-    unsigned long long name_hash = get_hash(name);
-    unsigned long long data_hash = get_hash(data);
-    save_data(name_hash, data_hash, res);
+
+    // Calculate hashes
+    std::string data_str;
+    data_str.reserve(sequence.size());
+    for (int ch : sequence) {
+        data_str.push_back(static_cast<char>(ch));
+    }
+    unsigned long long name_hash = serializer_->calculate_hash(name);
+    unsigned long long data_hash = serializer_->calculate_hash(sequence);
+
+    // Store using StorageManager
+    storage_manager_->store(name_hash, data_hash, res, res.size() / encryptor_->get_block_size());
+
+    // Write to WAL for incremental persistence
+    fvm::interfaces::WalEntry entry;
+    entry.op = storage_manager_->exists(name_hash) ? fvm::interfaces::WalOperation::UPDATE : fvm::interfaces::WalOperation::INSERT;
+    entry.name_hash = name_hash;
+    entry.data_hash = data_hash;
+    entry.len = res.size() / encryptor_->get_block_size();
+    entry.data = res;
+
+    wal_manager_->append_entry(entry);
+
     return true;
 }
 
 bool Saver::load(const std::string& name, std::vector<std::vector<std::string>>& content, bool mandatory_access) {
-    unsigned long long name_hash = get_hash(name);
-    if (!mp.count(name_hash)) {
+    unsigned long long name_hash = serializer_->calculate_hash(name);
+
+    // Use StorageManager to retrieve data
+    fvm::interfaces::DataNode node;
+    if (!storage_manager_->retrieve(name_hash, node)) {
         logger_.log("Failed to load data. No data named A exists. ", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
-    dataNode &data = mp[name_hash];
+
+    // Decrypt the data
     std::vector<int> sequence;
-    encryptor_->decrypt_sequence(data.data, sequence);
-    if (get_hash(sequence) != data.data_hash) {
+    encryptor_->decrypt_sequence(node.data, sequence);
+
+    // Verify data integrity
+    if (serializer_->calculate_hash(sequence) != node.data_hash) {
         logger_.log("Data failed to pass integrity verification.", fvm::interfaces::LogLevel::WARNING, __LINE__);
         if (!mandatory_access) return false;
     }
-    std::string str;
-    for (auto &it : sequence) {
-        str.push_back(it);
+
+    // Deserialize the data
+    if (!serializer_->deserialize(sequence, content)) {
+        logger_.log("Failed to deserialize data.", fvm::interfaces::LogLevel::WARNING, __LINE__);
+        return false;
     }
-    /**
-     * data字符串的格式:
-     * 数据块的个数 
-     * 每个数据块中数据的个数
-     * 数据的长度
-     * 数据字符串
-    */
-    content.clear();
-    int block_num, data_num, data_len;
-    block_num = read(str);
-    for (int i = 0; i < block_num; i++) {
-        content.push_back(std::vector<std::string>());
-        data_num = read(str);
-        for (int j = 0; j < data_num; j++) {
-            data_len = read(str);
-            if (str.size() < data_len) {
-                logger_.log("Failed to load data. No data named A exists. ", fvm::interfaces::LogLevel::WARNING, __LINE__);
-                return false;
-            }
-            content.back().push_back(std::string(str.begin(), str.begin() + data_len));
-            str.erase(str.begin(), str.begin() + data_len);
-        }
-    }
+
     return true;
 }
 
@@ -744,10 +782,11 @@ bool Saver::load_from_wal() {
 }
 
 bool Saver::compact() {
-    // Build the complete data file content
+    // Build the complete data file content using StorageManager
     std::ostringstream oss;
-    for (const auto& data : mp) {
-        const dataNode& dn = data.second;
+    auto all_data = storage_manager_->get_all_data();
+    for (const auto& data : all_data) {
+        const auto& dn = data.second;
         oss << data.first << ' ' << dn.data_hash << ' ' << dn.len;
         for (const auto& pr : dn.data) {
             oss << ' ' << pr.first << ' ' << pr.second;
@@ -755,19 +794,14 @@ bool Saver::compact() {
         oss << '\n';
     }
 
+    // Write to data file atomically
     if (!atomic_write(data_file, oss.str())) {
         logger_.log("compact: Failed to write compacted data file", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
 
     // Clear WAL after successful compaction
-    if (file_ops_) {
-        file_ops_->write_file(wal_file, "");
-    } else {
-        std::ofstream out(wal_file, std::ios::trunc);
-        out.close();
-    }
-    wal_entry_count = 0;
+    wal_manager_->clear();
 
     logger_.log("compact: Successfully compacted WAL to main file", fvm::interfaces::LogLevel::INFO, __LINE__);
     return true;
@@ -780,7 +814,7 @@ bool Saver::flush() {
 }
 
 size_t Saver::get_wal_size() const {
-    return wal_entry_count;
+    return wal_manager_->get_entry_count();
 }
 
 bool Saver::set_auto_compact(size_t threshold) {
@@ -788,13 +822,25 @@ bool Saver::set_auto_compact(size_t threshold) {
         logger_.log("set_auto_compact: Threshold must be > 0", fvm::interfaces::LogLevel::WARNING, __LINE__);
         return false;
     }
-    auto_compact_threshold = threshold;
+    wal_manager_->set_auto_compact_threshold(threshold);
     return true;
 }
 
 bool Saver::set_wal_enabled(bool enabled) {
-    enable_wal = enabled;
+    wal_manager_->set_enabled(enabled);
     return true;
+}
+
+
+// Test factory function - creates Saver instances for testing
+extern "C" Saver* create_test_saver(fvm::interfaces::ILogger& logger,
+                                  fvm::interfaces::IEncryptor* encryptor,
+                                  fvm::interfaces::IFileOperations* file_ops) {
+    return new Saver(logger, encryptor, file_ops);
+}
+
+extern "C" void destroy_test_saver(Saver* saver) {
+    delete saver;
 }
 
 

@@ -3,15 +3,19 @@ GTEST_DIR = /opt/homebrew/include
 GTEST_LIBS = -lgtest -lgtest_main -pthread
 GTEST_LDFLAGS = -L/opt/homebrew/lib
 
-# Test sources
-TEST_SOURCES = $(wildcard unit/*.cpp)
+# Test sources (exclude saver_test.cpp for now - Saver class is defined in saver.cpp)
+TEST_SOURCES = $(filter-out unit/saver_test.cpp, $(wildcard unit/*.cpp))
 TEST_OBJECTS = $(TEST_SOURCES:.cpp=.o)
 
 # Only compile standalone sources that don't include other .cpp files
 MAIN_OBJECTS = \
 	../lib/random.o \
 	../lib/system_clock.o \
-	../lib/encryptor.o
+	../lib/encryptor.o \
+	../lib/data_serializer.o \
+	../lib/wal_manager.o \
+	../lib/storage_manager.o \
+	../lib/saver.o
 
 # Compiler flags
 CXXFLAGS = -std=c++17 -I../include -I. -I$(GTEST_DIR) -g -Wall
