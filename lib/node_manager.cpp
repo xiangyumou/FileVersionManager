@@ -60,6 +60,10 @@ public:
                 fvm::repositories::INodeManagerRepository& repository);
     ~NodeManager();
 
+    // Lifecycle management (for testability)
+    bool initialize() override;  // Load data from repository
+    bool shutdown() override;    // Save data to repository
+
     // Singleton accessor removed - use dependency injection instead
     bool node_exist(unsigned long long id) override;
     unsigned long long get_new_node(const std::string& name) override;
@@ -130,13 +134,21 @@ NodeManager::NodeManager(fvm::interfaces::ILogger& logger,
                          fvm::repositories::INodeManagerRepository& repository)
     : file_manager_(file_manager), repository_(repository), logger_(logger) {
     srand(time(NULL));
-    if (!load()) return;
+    // Constructor no longer loads data - use initialize() instead
 }
 
 NodeManager::~NodeManager() {
-    if (!save()) {
-        std::cerr << "FATAL: Failed to save node manager data in destructor!" << std::endl;
-    }
+    // Destructor no longer saves data - use shutdown() instead
+}
+
+bool NodeManager::initialize() {
+    // Load data from repository
+    return load();
+}
+
+bool NodeManager::shutdown() {
+    // Save data to repository
+    return save();
 }
 
 unsigned long long NodeManager::get_new_node(const std::string& name) {

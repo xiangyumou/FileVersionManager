@@ -1,11 +1,11 @@
 /**
-   ___ _                 _                      
-  / __| |__   __ _ _ __ | |_    /\/\   ___  ___ 
+   ___ _                 _
+  / __| |__   __ _ _ __ | |_    /\/\   ___  ___
  / /  | '_ \ / _` | '_ \| __|  /    \ / _ \/ _ \
 / /___| | | | (_| | | | | |_  / /\/\ |  __|  __/
 \____/|_| |_|\__,_|_| |_|\__| \/    \/\___|\___|
 
-@ Author: Mu Xiangyu, Chant Mee 
+@ Author: Mu Xiangyu, Chant Mee
 */
 
 #ifndef FILE_SYSTEM_CPP
@@ -25,11 +25,11 @@
 #include <vector>
 
 /**
- * @brief 
- * This part is the core part of the system (of course, no other part of the system can 
+ * @brief
+ * This part is the core part of the system (of course, no other part of the system can
  * not run. QAQ)
- * This class mainly encapsulates the functions of other classes. Except for the Terminal 
- * class, this class is the class closest to the user. Users can use various functions of the 
+ * This class mainly encapsulates the functions of other classes. Except for the Terminal
+ * class, this class is the class closest to the user. Users can use various functions of the
  * file system by creating objects of this class, but it is not very convenient.
  */
 class FileSystem : private BSTree, public fvm::interfaces::IFileSystem {

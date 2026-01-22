@@ -8,11 +8,21 @@
 namespace fvm {
 namespace interfaces {
 
+// Forward declaration
+class IFileOperations;
+
 using vvs = std::vector<std::vector<std::string>>;
 
 class ISaver : public IStringUtilities {
 public:
     virtual ~ISaver() = default;
+
+    // Lifecycle management (for testability)
+    virtual bool initialize() = 0;  // Load data from files
+    virtual bool shutdown() = 0;    // Save data to files
+
+    // File operations injection (for testability)
+    virtual void set_file_operations(IFileOperations* file_ops) = 0;
 
     // Primary save/load interface
     virtual bool save(const std::string& name, vvs& content) = 0;

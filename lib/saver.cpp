@@ -1,11 +1,11 @@
 /**
-   ___ _                 _                      
-  / __| |__   __ _ _ __ | |_    /\/\   ___  ___ 
+   ___ _                 _
+  / __| |__   __ _ _ __ | |_    /\/\   ___  ___
  / /  | '_ \ / _` | '_ \| __|  /    \ / _ \/ _ \
 / /___| | | | (_| | | | | |_  / /\/\ |  __|  __/
 \____/|_| |_|\__,_|_| |_|\__| \/    \/\___|\___|
 
-@ Author: Mu Xiangyu, Chant Mee 
+@ Author: Mu Xiangyu, Chant Mee
 */
 
 #ifndef SAVER_CPP
@@ -15,6 +15,7 @@
 #include "encryptor.cpp"
 #include "fvm/interfaces/ISaver.h"
 #include "fvm/interfaces/ILogger.h"
+#include "fvm/interfaces/IFileOperations.h"
 #include <cctype>
 #include <vector>
 #include <string>
@@ -90,6 +91,13 @@ private:
     std::map<unsigned long long, dataNode> mp;
 
     fvm::interfaces::ILogger& logger_;
+
+    /**
+     * @brief
+     * File operations abstraction (for testability).
+     */
+    fvm::interfaces::IFileOperations* file_ops_;
+    bool owns_file_ops_;  // True if we created the default implementation
 
     /**
      * @brief
@@ -180,17 +188,24 @@ private:
     bool atomic_write(const std::string& filename, const std::string& content);
 
 public:
-    Saver(fvm::interfaces::ILogger& logger);
-    
+    Saver(fvm::interfaces::ILogger& logger, fvm::interfaces::IFileOperations* file_ops = nullptr);
+
     /**
      * 保存的格式：
      * name_hash data_hash len 后面跟len对浮点数
     */
     ~Saver();
 
+    // File operations injection (for testability)
+    void set_file_operations(fvm::interfaces::IFileOperations* file_ops) override;
+
+    // Lifecycle management (for testability)
+    bool initialize() override;  // Load data from files
+    bool shutdown() override;    // Save data to files
+
     /**
      * data字符串的格式:
-     * 数据块的个数 
+     * 数据块的个数
      * 每个数据块中数据的个数
      * 数据的长度
      * 数据的字符表示
@@ -328,9 +343,9 @@ int Saver::read(std::string &s) {
     return d;
 }
 
-Saver::Saver(fvm::interfaces::ILogger& logger) : logger_(logger) {
-    load_file();
-    load_from_wal();  // Replay WAL after loading main file
+Saver::Saver(fvm::interfaces::ILogger& logger, fvm::interfaces::IFileOperations* file_ops)
+    : logger_(logger), file_ops_(file_ops), owns_file_ops_(false) {
+    // Constructor no longer loads data - use initialize() instead
 }
 
 /**
@@ -338,8 +353,34 @@ Saver::Saver(fvm::interfaces::ILogger& logger) : logger_(logger) {
  * name_hash data_hash len 后面跟len对浮点数
 */
 Saver::~Saver() {
-    // Compact WAL to main file on shutdown (ensures data persistence)
-    compact();
+    // Destructor no longer saves data - use shutdown() instead
+    if (owns_file_ops_ && file_ops_) {
+        delete file_ops_;
+    }
+}
+
+void Saver::set_file_operations(fvm::interfaces::IFileOperations* file_ops) {
+    if (owns_file_ops_ && file_ops_) {
+        delete file_ops_;
+    }
+    file_ops_ = file_ops;
+    owns_file_ops_ = false;
+}
+
+bool Saver::initialize() {
+    // Load data from files
+    if (!load_file()) {
+        logger_.log("initialize: No data file found (this is ok for first run)", fvm::interfaces::LogLevel::INFO, __LINE__);
+    }
+    if (!load_from_wal()) {
+        logger_.log("initialize: No WAL file found (this is ok for first run)", fvm::interfaces::LogLevel::INFO, __LINE__);
+    }
+    return true;
+}
+
+bool Saver::shutdown() {
+    // Save data to files via WAL compaction
+    return compact();
 }
 
 /**
@@ -442,24 +483,47 @@ unsigned long long Saver::str_to_ull(std::string &s) {
 
 bool Saver::atomic_write(const std::string& filename, const std::string& content) {
     std::string tmp_file = filename + ".tmp";
-    std::ofstream out(tmp_file, std::ios::binary | std::ios::trunc);
-    if (!out.good()) {
-        logger_.log("atomic_write: Failed to create temp file " + tmp_file, fvm::interfaces::LogLevel::FATAL, __LINE__);
-        return false;
-    }
-    out << content;
-    out.close();
 
-    if (!out.good()) {
+    // Write to temp file
+    bool write_ok;
+    if (file_ops_) {
+        write_ok = file_ops_->write_file(tmp_file, content);
+    } else {
+        std::ofstream out(tmp_file, std::ios::binary | std::ios::trunc);
+        if (!out.good()) {
+            logger_.log("atomic_write: Failed to create temp file " + tmp_file, fvm::interfaces::LogLevel::FATAL, __LINE__);
+            return false;
+        }
+        out << content;
+        out.close();
+        write_ok = out.good();
+    }
+
+    if (!write_ok) {
         logger_.log("atomic_write: Failed to write to temp file " + tmp_file, fvm::interfaces::LogLevel::FATAL, __LINE__);
-        std::remove(tmp_file.c_str());
+        if (file_ops_) {
+            file_ops_->delete_file(tmp_file);
+        } else {
+            std::remove(tmp_file.c_str());
+        }
         return false;
     }
 
     // Atomic rename from temp to target
-    if (std::rename(tmp_file.c_str(), filename.c_str()) != 0) {
+    bool rename_ok;
+    if (file_ops_) {
+        rename_ok = file_ops_->rename_file(tmp_file, filename);
+    } else {
+        rename_ok = (std::rename(tmp_file.c_str(), filename.c_str()) == 0);
+    }
+
+    if (!rename_ok) {
         logger_.log("atomic_write: Failed to rename temp file to " + filename, fvm::interfaces::LogLevel::FATAL, __LINE__);
-        std::remove(tmp_file.c_str());
+        if (file_ops_) {
+            file_ops_->delete_file(tmp_file);
+        } else {
+            std::remove(tmp_file.c_str());
+        }
         return false;
     }
 
@@ -484,16 +548,21 @@ bool Saver::flush_wal(const WalEntry& entry) {
     std::string wal_line = oss.str();
 
     // Append to WAL file
-    std::ofstream out(wal_file, std::ios::app | std::ios::binary);
-    if (!out.good()) {
-        logger_.log("flush_wal: Failed to open WAL file for appending", fvm::interfaces::LogLevel::FATAL, __LINE__);
-        return false;
+    bool append_ok;
+    if (file_ops_) {
+        append_ok = file_ops_->append_file(wal_file, wal_line);
+    } else {
+        std::ofstream out(wal_file, std::ios::app | std::ios::binary);
+        if (!out.good()) {
+            logger_.log("flush_wal: Failed to open WAL file for appending", fvm::interfaces::LogLevel::FATAL, __LINE__);
+            return false;
+        }
+        out << wal_line;
+        out.close();
+        append_ok = out.good();
     }
 
-    out << wal_line;
-    out.close();
-
-    if (!out.good()) {
+    if (!append_ok) {
         logger_.log("flush_wal: Failed to write to WAL file", fvm::interfaces::LogLevel::FATAL, __LINE__);
         return false;
     }
@@ -587,8 +656,12 @@ bool Saver::compact() {
     }
 
     // Clear WAL after successful compaction
-    std::ofstream out(wal_file, std::ios::trunc);
-    out.close();
+    if (file_ops_) {
+        file_ops_->write_file(wal_file, "");
+    } else {
+        std::ofstream out(wal_file, std::ios::trunc);
+        out.close();
+    }
     wal_entry_count = 0;
 
     logger_.log("compact: Successfully compacted WAL to main file", fvm::interfaces::LogLevel::INFO, __LINE__);

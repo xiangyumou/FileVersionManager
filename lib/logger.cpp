@@ -1,9 +1,9 @@
 /**
-   ___ _                 _
+  ___ _                 _
   / __| |__   __ _ _ __ | |_    /\/\   ___  ___
  / /  | '_ \ / _` | '_ \| __|  /    \ / _ \/ _ \
-/ /___| | | | (_| | | | | |_  / /\/\ |  __|  __/
-\____/|_| |_|\__,_|_| |_|\__| \/    \/\___|\___|
+/ /___| | | | (_| | | | | |_  / /\  |  __|  __/
+\____/|_| |_|\__,_|_| |_|\__| \/  \/\___|\___|
 
 @ Author: Mu Xiangyu, Chant Mee
 */
@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "fvm/interfaces/ILogger.h"
+#include "fvm/interfaces/IFileOperations.h"
 
 class Logger : public fvm::interfaces::ILogger {
 public:
@@ -36,6 +37,10 @@ private:
     size_t max_file_size;
     int max_rotation_files;
 
+    // File operations abstraction (for testability)
+    fvm::interfaces::IFileOperations* file_ops_;
+    bool owns_file_ops_;  // True if we created the default implementation
+
     // 运行时状态
     std::ofstream log_stream;
     std::string last_error_message;
@@ -51,8 +56,11 @@ private:
     Logger& operator=(const Logger&) = delete;
 
 public:
-    Logger();
+    Logger(fvm::interfaces::IFileOperations* file_ops = nullptr);
     ~Logger();
+
+    // File operations injection (for testability)
+    void set_file_operations(fvm::interfaces::IFileOperations* file_ops) override;
 
     static Logger& get_logger();
 
@@ -114,7 +122,12 @@ void Logger::open_log_stream() {
     if (log_stream.is_open()) {
         log_stream.close();
     }
-    log_stream.open(log_file, std::ios_base::app);
+    // Use file_ops_ if available, otherwise direct file access
+    if (file_ops_) {
+        log_stream = std::ofstream(log_file, std::ios_base::app);
+    } else {
+        log_stream.open(log_file, std::ios_base::app);
+    }
     if (!log_stream.is_open()) {
         std::cerr << "Failed to open log file: " << log_file << std::endl;
     }
@@ -128,24 +141,36 @@ void Logger::rotate_log_file() {
 
     // 删除最老的文件
     std::string oldest_file = log_file + "." + std::to_string(max_rotation_files);
-    std::remove(oldest_file.c_str());
+    if (file_ops_) {
+        file_ops_->delete_file(oldest_file);
+    } else {
+        std::remove(oldest_file.c_str());
+    }
 
     // 重命名现有文件: log.chm.N -> log.chm.(N+1)
     for (int i = max_rotation_files - 1; i >= 1; i--) {
         std::string old_name = log_file + "." + std::to_string(i);
         std::string new_name = log_file + "." + std::to_string(i + 1);
-        std::rename(old_name.c_str(), new_name.c_str());
+        if (file_ops_) {
+            file_ops_->rename_file(old_name, new_name);
+        } else {
+            std::rename(old_name.c_str(), new_name.c_str());
+        }
     }
 
     // 当前文件 -> log.chm.1
     std::string rotated_name = log_file + ".1";
-    std::rename(log_file.c_str(), rotated_name.c_str());
+    if (file_ops_) {
+        file_ops_->rename_file(log_file, rotated_name);
+    } else {
+        std::rename(log_file.c_str(), rotated_name.c_str());
+    }
 
     // 重新打开新文件
     open_log_stream();
 }
 
-Logger::Logger()
+Logger::Logger(fvm::interfaces::IFileOperations* file_ops)
     : log_file("log.chm"),
       min_log_level(fvm::interfaces::LogLevel::INFO),
       timezone_offset(8),
@@ -153,8 +178,16 @@ Logger::Logger()
       enable_file_rotation(false),
       max_file_size(10 * 1024 * 1024),
       max_rotation_files(5),
-      last_error_message("")
+      last_error_message(""),
+      file_ops_(file_ops),
+      owns_file_ops_(false)
 {
+    // If no file_ops provided, create default implementation
+    if (!file_ops_) {
+        owns_file_ops_ = true;
+        // Note: We can't create FileSystemOperations here without including it
+        // For now, use direct file access when file_ops_ is null
+    }
     open_log_stream();
 }
 
@@ -163,6 +196,25 @@ Logger::~Logger() {
     if (log_stream.is_open()) {
         log_stream.close();
     }
+    if (owns_file_ops_ && file_ops_) {
+        delete file_ops_;
+        file_ops_ = nullptr;
+    }
+}
+
+void Logger::set_file_operations(fvm::interfaces::IFileOperations* file_ops) {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    if (owns_file_ops_ && file_ops_) {
+        delete file_ops_;
+    }
+    file_ops_ = file_ops;
+    owns_file_ops_ = false;
+
+    // Reopen log stream with new file operations
+    if (log_stream.is_open()) {
+        log_stream.close();
+    }
+    open_log_stream();
 }
 
 // Singleton accessor removed - use dependency injection instead

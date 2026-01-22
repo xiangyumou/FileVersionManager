@@ -44,6 +44,10 @@ public:
                        fvm::repositories::ICommandRepository& repository);
     ~CommandInterpreter();
 
+    // Lifecycle management (for testability)
+    bool initialize() override;  // Load data from repository
+    bool shutdown() override;    // Save data to repository
+
     bool FIRST_START = false;
     bool add_identifier(const std::string& identifier, unsigned long long pid) override;
     bool delete_identifier(const std::string& identifier) override;
@@ -115,11 +119,26 @@ bool CommandInterpreter::load() {
 CommandInterpreter::CommandInterpreter(fvm::interfaces::ILogger& logger,
                                      fvm::repositories::ICommandRepository& repository)
     : repository_(repository), logger_(logger) {
-    if (!load()) FIRST_START = true;
+    // Constructor no longer loads data - use initialize() instead
+    FIRST_START = false;
 }
 
 CommandInterpreter::~CommandInterpreter() {
-    save();
+    // Destructor no longer saves data - use shutdown() instead
+}
+
+bool CommandInterpreter::initialize() {
+    // Load data from repository
+    bool result = load();
+    if (mp.empty()) {
+        FIRST_START = true;
+    }
+    return result;
+}
+
+bool CommandInterpreter::shutdown() {
+    // Save data to repository
+    return save();
 }
 
 bool CommandInterpreter::add_identifier(const std::string& identifier, unsigned long long pid) {

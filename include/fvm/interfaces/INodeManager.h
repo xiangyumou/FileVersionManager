@@ -11,6 +11,10 @@ class INodeManager {
 public:
     virtual ~INodeManager() = default;
 
+    // Lifecycle management (for testability)
+    virtual bool initialize() = 0;  // Load data from repository
+    virtual bool shutdown() = 0;    // Save data to repository
+
     virtual bool node_exist(unsigned long long id) = 0;
     virtual unsigned long long get_new_node(const std::string& name) = 0;
     virtual void delete_node(unsigned long long idx) = 0;

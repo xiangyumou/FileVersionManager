@@ -8,6 +8,7 @@
 @ Author: Mu Xiangyu, Chant Mee
 */
 
+// Core implementations
 #include "lib/logger.cpp"
 #include "lib/saver.cpp"
 #include "lib/encryptor.cpp"
@@ -18,6 +19,7 @@
 #include "lib/file_system.cpp"
 #include "lib/command_interpreter.cpp"
 #include "lib/terminal.cpp"
+#include "lib/file_system_operations.cpp"
 
 // Repository implementations
 #include "lib/repositories/saver_file_manager_repository.cpp"
@@ -68,10 +70,35 @@ int main() {
 
     // ===== Layer 4: Application Services =====
     FileSystem file_system(logger, node_manager, version_manager);
+    CommandInterpreter command_interp(logger, command_repo);
     Terminal terminal(logger, file_system, command_repo, saver);
+
+    // ===== Layer 5: Initialize all components =====
+    // Initialize in dependency order
+    if (!saver.initialize()) {
+        std::cerr << "Failed to initialize Saver" << std::endl;
+        return 1;
+    }
+
+    if (!node_manager.initialize()) {
+        std::cerr << "Failed to initialize NodeManager" << std::endl;
+        return 1;
+    }
+
+    if (!command_interp.initialize()) {
+        std::cerr << "Failed to initialize CommandInterpreter" << std::endl;
+        return 1;
+    }
 
     // ===== Run Application =====
     int result = terminal.run();
+
+    // ===== Layer 6: Shutdown all components =====
+    // Shutdown in reverse dependency order
+    command_interp.shutdown();
+    // Note: version_manager doesn't have shutdown (no persistence)
+    node_manager.shutdown();
+    saver.shutdown();
 
     return result;
 }

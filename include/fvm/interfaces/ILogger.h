@@ -6,6 +6,9 @@
 namespace fvm {
 namespace interfaces {
 
+// Forward declaration
+class IFileOperations;
+
 enum class LogLevel {
     INFO = 0,
     DEBUG,
@@ -16,6 +19,9 @@ enum class LogLevel {
 class ILogger {
 public:
     virtual ~ILogger() = default;
+
+    // File operations injection (for testability)
+    virtual void set_file_operations(IFileOperations* file_ops) = 0;
 
     // Configuration methods
     virtual bool set_log_file(const std::string& file_path) = 0;
